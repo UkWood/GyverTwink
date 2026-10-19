@@ -22,13 +22,14 @@ void effects() {
     byte curPal = thisEffect;
     if (curPal >= ACTIVE_PALETTES) curPal -= ACTIVE_PALETTES;
 
+    int mmH = max((int)mm.h, 1);   // высота 0 (все лампы на одной линии) - деление на ноль
     for (int i = 0; i < cfg.ledAm; i++) {
       byte idx;
 
       if (thisEffect < ACTIVE_PALETTES) {
         // первые ACTIVE_PALETTES эффектов - градиент
         // idx = map(xy[i][1], mm.minY, mm.maxY, 0, 255) + counter;   // прямой градиент
-        idx = countP + ((mm.w * xy[i][0] / mm.h) + xy[i][1]) * scale / 100;   // диагональный градиент
+        idx = countP + ((mm.w * xy[i][0] / mmH) + xy[i][1]) * scale / 100;   // диагональный градиент
       } else {
         // следующие - перлин нойс
         idx = inoise8(xy[i][0] * scale / 10, xy[i][1] * scale / 10, countP);
