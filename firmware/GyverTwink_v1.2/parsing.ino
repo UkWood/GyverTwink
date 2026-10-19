@@ -1,5 +1,5 @@
 #define MAX_UDP_PACKET 30
-byte ubuf[MAX_UDP_PACKET];
+byte ubuf[MAX_UDP_PACKET + 1];  // +1 под завершающий ноль
 
 void reply(byte* data, byte size) {
   udp.beginPacket(udp.remoteIP(), udp.remotePort());
@@ -17,6 +17,7 @@ void parsing() {
     }
     tmr = millis();
     int n = udp.read(ubuf, MAX_UDP_PACKET);
+    if (n < 3) return;
     ubuf[n] = 0;
     if (ubuf[0] != 'G' || ubuf[1] != 'T') return;
     /*for (int i = 2; i < n; i++) {
@@ -51,7 +52,7 @@ void parsing() {
       case 2:   // приём настроек
         forceTmr.stop();
         switch (ubuf[3]) {
-          case 0: cfg.ledAm = ubuf[4] * 100 + ubuf[5];
+          case 0: cfg.ledAm = constrain(ubuf[4] * 100 + ubuf[5], 1, LED_MAX);
             strip->setLeds(leds, cfg.ledAm);
             break;
           case 1: cfg.power = ubuf[4];
@@ -100,12 +101,13 @@ void parsing() {
           case 1:   // следующий лед
             {
               int curLed = ubuf[4] * 100 + ubuf[5];
+              if (curLed > LED_MAX) break;   // за пределами массивов
               if (curLed > 0) {
                 xy[curLed - 1][0] = ubuf[6];
                 xy[curLed - 1][1] = ubuf[7];
               }
               strip->clearLedData();
-              leds[curLed] = CRGB::White;
+              if (curLed < LED_MAX) leds[curLed] = CRGB::White;   // curLed == LED_MAX - только сохранить координаты последнего
               strip->showLeds(200);
             }
             break;
@@ -139,6 +141,7 @@ void parsing() {
         EEeff.update();
         switch (ubuf[3]) {
           case 0:   // выбор эффекта в дропе
+            if (ubuf[4] >= ACTIVE_PALETTES * 2) break;   // нет такого эффекта
             forceEff = ubuf[4];
             answ[0] = 4;
             answ[1] = effs[forceEff].fav;

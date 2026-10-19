@@ -129,7 +129,9 @@ void setup() {
   EEmm.begin(EEeff.nextAddr(), (uint8_t)LED_MAX);
   EExy.begin(EEmm.nextAddr(), (uint8_t)LED_MAX);
 
+  cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
   switchTmr.setPrd(cfg.prdCh * 60000ul);
+  offTmr.setPrd(cfg.offTmr * 60000ul);
   if (cfg.autoCh) switchTmr.restart();
   switchEff();
   cfg.turnOff = false;
