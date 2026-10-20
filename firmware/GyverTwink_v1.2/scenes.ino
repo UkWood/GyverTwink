@@ -3,30 +3,8 @@
 // В сцену входят яркость, автосмена, случайный порядок, период, текущий эффект и настройки всех 22 эффектов.
 // Питание, число светодиодов и лимит тока - свойства установки, а не сцены: они не сохраняются и не меняются.
 
-#define SCENE_SLOTS 8
-#define SCENE_NAME_LEN 16   // байт (в UTF-8 кириллица занимает 2 байта на букву)
 #define SCENE_FILE "/scenes.bin"
 #define SCENE_TMP "/scenes.tmp"
-
-struct Scene {
-  byte used;
-  char name[SCENE_NAME_LEN + 1];
-  byte bright;
-  byte autoCh;
-  byte rndCh;
-  byte prdCh;
-  byte curEff;
-  Effects effs[ACTIVE_PALETTES * 2];
-};
-static_assert(sizeof(Scene) == 1 + SCENE_NAME_LEN + 1 + 5 + 3 * ACTIVE_PALETTES * 2, "размер Scene - формат файла, менять нельзя");
-
-// заголовок файла: версия формата, число слотов и контрольная сумма записей
-struct SceneHeader {
-  char magic[2];
-  byte version;
-  byte slots;
-  uint16_t sum;
-};
 
 Scene scenes[SCENE_SLOTS];
 
