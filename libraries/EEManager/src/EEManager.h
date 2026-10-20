@@ -37,7 +37,7 @@ public:
     }
     
     // начать работу, прочитать данные в переменную. Принимает адрес начала хранения даты и ключ
-    uint8_t begin(uint8_t addr, uint8_t key) {        
+    uint8_t begin(uint16_t addr, uint8_t key) {   // addr расширен до uint16_t: блоки за 255 адресом (GyverTwink)        
         _addr = addr;
         if (_addr + _size + 1 > EEPROM.length()) return 2;  // не хватит места
         _ready = 1;

@@ -25,7 +25,7 @@ void button() {
       if (bri == 255) {
         strip->showLeds(0);
         delay(100);
-        strip->showLeds(bri);
+        strip->showLeds(limitedBright(bri));
       }
       EEcfg.update();
     }
