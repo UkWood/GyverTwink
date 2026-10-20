@@ -17,6 +17,7 @@
   <button data-tab="control" class="active">Управление</button>
   <button data-tab="effects">Эффекты</button>
   <button data-tab="scenes">Сцены</button>
+  <button data-tab="coords">Координаты</button>
 </nav>
 <main>
   <section class="tab active" id="tab-control">
@@ -71,6 +72,30 @@
       <h2>Мои сцены</h2>
       <ul id="sceneList"></ul>
       <p id="sceneEmpty" class="hint">Пока нет сохранённых сцен.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-coords">
+    <div class="card">
+      <h2>Координаты светодиодов</h2>
+      <p class="hint" id="cEmpty" hidden>Координаты не заданы: все точки в одном месте. Пройдите калибровку.</p>
+      <canvas id="cCanvas" aria-label="Карта светодиодов"></canvas>
+      <div class="row">
+        <button id="cPrev" class="btn secondary" aria-label="Предыдущий светодиод">◀</button>
+        <label>№ <input id="cIdx" type="number" min="1" inputmode="numeric"></label>
+        <button id="cNext" class="btn secondary" aria-label="Следующий светодиод">▶</button>
+      </div>
+      <div class="row">
+        <label>X <input id="cX" type="number" min="0" max="255" inputmode="numeric"></label>
+        <label>Y <input id="cY" type="number" min="0" max="255" inputmode="numeric"></label>
+      </div>
+      <div class="row"><label for="cLine">Соединять линией</label><input id="cLine" type="checkbox" checked></div>
+      <p class="hint" id="cInfo"></p>
+      <div class="row">
+        <button id="cSave" class="btn" disabled>Сохранить на гирлянду</button>
+        <button id="cUndo" class="btn secondary" disabled>Отменить</button>
+      </div>
+      <p class="hint">Выбранный светодиод горит на гирлянде. Перетащи точку, если калибровка ошиблась. Красные кольца — подозрительные точки (далеко от обоих соседей по ленте).</p>
     </div>
   </section>
 </main>

@@ -85,6 +85,7 @@ EEManager EEeff(effs);
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
 Timer offTmr(60000, false);
+Timer hlTmr(60000, false);   // автоматическое выключение подсветки светодиода из редактора координат
 bool calibF = false;
 byte curEff = 0;
 byte forceEff = 0;

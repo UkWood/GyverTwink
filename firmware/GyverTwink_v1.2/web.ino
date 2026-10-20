@@ -216,6 +216,84 @@ static void handleSceneDelete() {
   webSendScenes();
 }
 
+// ---------- координаты светодиодов (редактор) ----------
+static const char HEX_DIGITS[] = "0123456789abcdef";
+
+static int hexVal(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+// GET /api/xy: {"n":число,"w":..,"h":..,"xy":"hex"} - по 4 символа на светодиод: x, y
+static void handleXyGet() {
+  String body;
+  body.reserve(60 + 4 * cfg.ledAm);
+  char head[64];
+  snprintf(head, sizeof(head), "{\"n\":%u,\"w\":%u,\"h\":%u,\"xy\":\"", (unsigned)cfg.ledAm, (unsigned)mm.w, (unsigned)mm.h);
+  body += head;
+  for (int i = 0; i < cfg.ledAm; i++) {
+    for (int k = 0; k < 2; k++) {
+      char two[3] = {HEX_DIGITS[xy[i][k] >> 4], HEX_DIGITS[xy[i][k] & 15], 0};
+      body += two;
+    }
+  }
+  body += "\"}";
+  webJson(200, body.c_str());
+}
+
+// POST /api/xy?n=<число светодиодов>, тело - hex всех координат. n защищает от гонки: пока страница
+// редактировала точки, число светодиодов могли изменить из приложения (409).
+static void handleXyPost() {
+  if (!webAllowed()) return;
+  long n;
+  if (webArgInt("n", 1, LED_MAX, n) <= 0) {
+    webError(400, "n");
+    return;
+  }
+  if (n != cfg.ledAm) {
+    webError(409, "count");
+    return;
+  }
+  String body = webServer.arg("plain");
+  if (!webServer.hasArg("plain") || (long)body.length() != 4 * n) {
+    webError(400, "xy");
+    return;
+  }
+  for (unsigned i = 0; i < body.length(); i++) {
+    if (hexVal(body[i]) < 0) {
+      webError(400, "xy");
+      return;
+    }
+  }
+  // всё проверено: применяем целиком
+  for (long i = 0; i < n; i++) {
+    for (int k = 0; k < 2; k++) xy[i][k] = hexVal(body[4 * i + 2 * k]) * 16 + hexVal(body[4 * i + 2 * k + 1]);
+  }
+  recalcBounds();
+  coordsSave();
+  char r[40];
+  snprintf(r, sizeof(r), "{\"n\":%ld,\"w\":%u,\"h\":%u}", n, (unsigned)mm.w, (unsigned)mm.h);
+  webJson(200, r);
+}
+
+// POST /api/led: i - зажечь светодиод номер i, off=1 - погасить и вернуть эффекты
+static void handleLed() {
+  if (!webAllowed()) return;
+  long i, off;
+  int ri = webArgInt("i", 0, cfg.ledAm - 1, i);
+  int ro = webArgInt("off", 0, 1, off);
+  // нужно ровно одно из двух: i или off=1
+  if (ri < 0 || ro < 0 || (ri > 0 && ro > 0 && off) || (ri == 0 && !(ro > 0 && off))) {
+    webError(400, ri < 0 ? "i" : ro < 0 ? "off" : (ri > 0 ? "off" : "i"));
+    return;
+  }
+  if (ri > 0) ledHighlight(i);
+  else ledHighlightOff();
+  webJson(200, "{}");
+}
+
 void webBegin() {
   scenesBegin();
   static const char* hdrs[] = {WEB_HDR};
@@ -227,6 +305,9 @@ void webBegin() {
   webServer.on("/api/next", HTTP_POST, handleNext);
   webServer.on("/api/effect", HTTP_GET, handleEffectGet);
   webServer.on("/api/effect", HTTP_POST, handleEffectPost);
+  webServer.on("/api/xy", HTTP_GET, handleXyGet);
+  webServer.on("/api/xy", HTTP_POST, handleXyPost);
+  webServer.on("/api/led", HTTP_POST, handleLed);
   webServer.on("/api/scenes", HTTP_GET, handleScenesGet);
   webServer.on("/api/scenes/save", HTTP_POST, handleSceneSave);
   webServer.on("/api/scenes/load", HTTP_POST, handleSceneLoad);
@@ -237,6 +318,7 @@ void webBegin() {
 }
 
 void webTick() {
+  if (hlTmr.ready()) ledHighlightOff();
   webServer.handleClient();
   MDNS.update();
 }

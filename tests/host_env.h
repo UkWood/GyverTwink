@@ -32,6 +32,7 @@ ESP8266WebServer webServer(getenv("GT_WEB_PORT") ? atoi(getenv("GT_WEB_PORT")) :
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
 Timer offTmr(60000, false);
+Timer hlTmr(60000, false);
 bool calibF = false;
 byte curEff = 0;
 byte forceEff = 0;
@@ -41,6 +42,7 @@ byte forceEff = 0;
 #include "../firmware/GyverTwink_v1.2/switcher.ino"
 #include "../firmware/GyverTwink_v1.2/settings.ino"
 #include "../firmware/GyverTwink_v1.2/scenes.ino"
+#include "../firmware/GyverTwink_v1.2/coords.ino"
 #include "../firmware/GyverTwink_v1.2/effects.ino"
 #include "../firmware/GyverTwink_v1.2/parsing.ino"
 #include "../firmware/GyverTwink_v1.2/web.ino"

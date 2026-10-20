@@ -69,6 +69,8 @@ jobs:
           node-version: 22
       - name: Синтаксис app.js
         run: node --check web/app.js
+      - name: Тесты чистых функций страницы
+        run: node --test web/test/geometry.test.mjs
 
   web-ui:
     runs-on: ubuntu-latest
