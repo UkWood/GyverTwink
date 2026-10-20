@@ -8,6 +8,13 @@
 #include <deque>
 #include <random>
 #include <vector>
+#ifdef HOST_SOCKET_UDP
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 typedef uint8_t byte;
 typedef bool boolean;
@@ -37,6 +44,53 @@ struct IPAddress {
   uint8_t operator[](int i) const { return o[i]; }
 };
 
+#ifdef HOST_SOCKET_UDP
+// Вариант для стенда протокола: настоящий UDP-сокет на 127.0.0.1, ответы уходят отправителю
+struct WiFiUDP {
+  int fd = -1;
+  sockaddr_in peer{};
+  std::vector<uint8_t> pkt, cur;
+
+  bool begin(uint16_t port) {
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = htons(port);
+    if (fd < 0 || bind(fd, (sockaddr*)&a, sizeof(a)) < 0) return false;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    return true;
+  }
+  int parsePacket() {
+    uint8_t buf[2048];
+    socklen_t l = sizeof(peer);
+    int n = recvfrom(fd, buf, sizeof(buf), 0, (sockaddr*)&peer, &l);
+    if (n <= 0) return 0;
+    pkt.assign(buf, buf + n);
+    return n;
+  }
+  int read(uint8_t* b, size_t len) {
+    size_t n = std::min(len, pkt.size());
+    memcpy(b, pkt.data(), n);
+    return (int)n;
+  }
+  IPAddress remoteIP() { return IPAddress(127, 0, 0, 1); }
+  uint16_t remotePort() { return ntohs(peer.sin_port); }
+  int beginPacket(IPAddress, uint16_t) {
+    cur.clear();
+    return 1;
+  }
+  size_t write(const char* s) {
+    cur.insert(cur.end(), s, s + strlen(s));
+    return strlen(s);
+  }
+  size_t write(const uint8_t* d, size_t n) {
+    cur.insert(cur.end(), d, d + n);
+    return n;
+  }
+  int endPacket() { return sendto(fd, cur.data(), cur.size(), 0, (sockaddr*)&peer, sizeof(peer)) >= 0; }
+};
+#else
 // входящие пакеты кладутся в in, всё отправленное попадает в out
 struct WiFiUDP {
   std::deque<std::vector<uint8_t>> in;
@@ -70,6 +124,7 @@ struct WiFiUDP {
     return 1;
   }
 };
+#endif
 
 // ---- EEPROM: считаем обращения ----
 struct EEManager {
@@ -112,7 +167,7 @@ inline CRGB blend(const CRGB& a, const CRGB& b, uint8_t amt) {
 }
 inline uint8_t inoise8(uint16_t x, uint16_t y, uint16_t z) { return (uint8_t)(x * 31 + y * 17 + z * 7); }
 
-// Модель мощности из FastLED 3.4.0 (power_mgt.cpp): R 80 мВт, G 55 мВт, B 75 мВт, 5 мВт на выключенный светодиод
+// Модель мощности из FastLED (power_mgt.cpp, константы те же в 3.4.0 и 3.5.0): R 80 мВт, G 55 мВт, B 75 мВт, 5 мВт на выключенный светодиод
 inline uint32_t calculate_unscaled_power_mW(const CRGB* leds, uint16_t n) {
   uint32_t r = 0, g = 0, b = 0;
   for (uint16_t i = 0; i < n; i++) {

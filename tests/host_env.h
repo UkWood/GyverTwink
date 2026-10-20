@@ -1,0 +1,40 @@
+// Общая среда хост-сборки прошивки: заглушки, глобальные объекты (как в GyverTwink_v1.2.ino) и сами .ino.
+// Используется юнит-тестами (test_firmware.cpp) и хост-сервером для стенда протокола (host_server.cpp).
+#pragma once
+#include "host_stubs.h"
+
+#define LED_MAX 500
+#define POWER_LIMIT_MA 0
+#define POWER_VOLTS 5
+#define DEBUGLN(x)
+#define DEBUG(x)
+
+#include "../firmware/GyverTwink_v1.2/Timer.h"
+#include "../firmware/GyverTwink_v1.2/types.h"
+
+// ---- глобальные объекты, как в GyverTwink_v1.2.ino ----
+WiFiUDP udp;
+CRGB leds[LED_MAX];
+CLEDController stripObj;
+CLEDController* strip = &stripObj;
+IPAddress myIP(192, 168, 1, 42);
+Cfg cfg;
+byte xy[LED_MAX][2];
+MM mm;
+Pwr pwr;
+Effects effs[ACTIVE_PALETTES * 2];
+EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs);
+CRGBPalette16 paletteArr[ACTIVE_PALETTES];
+Timer forceTmr(30000, false);
+Timer switchTmr(0, false);
+Timer offTmr(60000, false);
+bool calibF = false;
+byte curEff = 0;
+byte forceEff = 0;
+
+// ---- тестируемый код ----
+#include "../firmware/GyverTwink_v1.2/power.ino"
+#include "../firmware/GyverTwink_v1.2/switcher.ino"
+#include "../firmware/GyverTwink_v1.2/effects.ino"
+#include "../firmware/GyverTwink_v1.2/parsing.ino"
+

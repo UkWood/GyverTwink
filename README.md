@@ -44,8 +44,9 @@ pio run -e d1_mini -t upload      # WeMos D1 mini; для NodeMCU: -e nodemcuv2
 | `POWER_LIMIT_MA` | лимит тока по умолчанию, мА; 0 — выключен |
 | `GT_AP_SSID`, `GT_AP_PASS` | имя и запасной пароль точки доступа |
 
-В Arduino IDE скетч тоже можно открыть (папка `firmware/GyverTwink_v1.2`), библиотеки лежат в [`libraries/`](libraries/) —
-скопируй их в папку библиотек Arduino. Этот способ в репозитории не проверяется автоматически.
+PlatformIO сам скачает FastLED 3.5.0, остальные библиотеки лежат в [`libraries/`](libraries/).
+В Arduino IDE скетч тоже можно открыть (папка `firmware/GyverTwink_v1.2`): установи FastLED **3.5.0** через менеджер библиотек,
+а содержимое [`libraries/`](libraries/) скопируй в папку библиотек Arduino. Этот способ в репозитории не проверяется автоматически.
 
 ## Первый запуск
 1. Включи гирлянду. На первых трёх светодиодах на секунду загорятся красный, зелёный и синий.
@@ -123,7 +124,7 @@ Android: [Google Play](https://play.google.com/store/apps/details?id=ru.alexgyve
 | `firmware` | прошивка для ESP8266 |
 | `processing` | исходники приложения |
 | `Android` | собранное приложение (.apk) |
-| `libraries` | библиотеки для прошивки (FastLED, EEManager, EncButton, SimplePortal) |
+| `libraries` | библиотеки для прошивки (EEManager, EncButton, SimplePortal; FastLED подтягивается PlatformIO) |
 | `schemes` | схемы подключения |
 | `docs` | протокол, дорожная карта, журнал решений |
 | `tests` | тесты прошивки на ПК |
