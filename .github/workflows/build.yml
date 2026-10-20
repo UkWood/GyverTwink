@@ -70,7 +70,7 @@ jobs:
       - name: Синтаксис app.js
         run: node --check web/app.js
       - name: Тесты чистых функций страницы
-        run: node --test web/test/geometry.test.mjs
+        run: node --test web/test/geometry.test.mjs web/test/calib.test.mjs
 
   web-ui:
     runs-on: ubuntu-latest
@@ -84,6 +84,8 @@ jobs:
         run: |
           npm install --prefix tests/web
           npx --prefix tests/web playwright install --with-deps chromium
+      - name: ffmpeg и numpy (синтетическое видео для теста калибровки)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-numpy
       - name: Хост-сервер с настоящим кодом прошивки
         run: make -C tests gt_host
       - name: e2e-тест веб-интерфейса

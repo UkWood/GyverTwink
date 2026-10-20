@@ -294,6 +294,52 @@ static void handleLed() {
   webJson(200, "{}");
 }
 
+// ---------- калибровка по видео ----------
+static void webSendVcalib() {
+  uint32_t e = vcRun ? millis() - vcT0 : 0;
+  uint16_t n = vcRun ? vcCount : cfg.ledAm;
+  int i = -1;
+  if (vcRun && vcFrame >= 3) i = vcFrame - 3;
+  char b[300];
+  snprintf(b, sizeof(b),
+           "{\"run\":%d,\"phase\":\"%s\",\"e\":%lu,\"i\":%d,\"n\":%u,\"delay\":%u,\"step\":%u,"
+           "\"dark\":%d,\"flash\":%d,\"gap\":%d,\"end\":%d,\"marker\":%d,\"total\":%lu}",
+           vcRun ? 1 : 0, vcRun ? vcPhaseName(e) : "idle", (unsigned long)e, i, (unsigned)n, (unsigned)vcDelay, (unsigned)vcStep,
+           VC_DARK_MS, VC_FLASH_MS, VC_GAP_MS, VC_END_MS, VC_MARKER_LEDS,
+           (unsigned long)(vcDelay * 1000UL + VC_DARK_MS + VC_FLASH_MS + VC_GAP_MS + (uint32_t)n * vcStep + VC_END_MS));
+  webJson(200, b);
+}
+
+static void handleVcalibGet() {
+  webSendVcalib();
+}
+
+// POST /api/vcalib/start: delay 0-120 (с, по умолчанию 12), step 60-1000 (мс, по умолчанию 120)
+static void handleVcalibStart() {
+  if (!webAllowed()) return;
+  long delaySec = VC_DELAY_DEFAULT, stepMs = VC_STEP_DEFAULT;
+  if (webArgInt("delay", 0, 120, delaySec) < 0) {
+    webError(400, "delay");
+    return;
+  }
+  if (webArgInt("step", 60, 1000, stepMs) < 0) {
+    webError(400, "step");
+    return;
+  }
+  if (vcRun) {
+    webError(409, "busy");
+    return;
+  }
+  vcalibStart(delaySec, stepMs);
+  webSendVcalib();
+}
+
+static void handleVcalibStop() {
+  if (!webAllowed()) return;
+  vcalibStop();
+  webSendVcalib();
+}
+
 void webBegin() {
   scenesBegin();
   static const char* hdrs[] = {WEB_HDR};
@@ -305,6 +351,9 @@ void webBegin() {
   webServer.on("/api/next", HTTP_POST, handleNext);
   webServer.on("/api/effect", HTTP_GET, handleEffectGet);
   webServer.on("/api/effect", HTTP_POST, handleEffectPost);
+  webServer.on("/api/vcalib", HTTP_GET, handleVcalibGet);
+  webServer.on("/api/vcalib/start", HTTP_POST, handleVcalibStart);
+  webServer.on("/api/vcalib/stop", HTTP_POST, handleVcalibStop);
   webServer.on("/api/xy", HTTP_GET, handleXyGet);
   webServer.on("/api/xy", HTTP_POST, handleXyPost);
   webServer.on("/api/led", HTTP_POST, handleLed);

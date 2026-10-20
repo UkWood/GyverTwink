@@ -17,6 +17,7 @@
   <button data-tab="control" class="active">Управление</button>
   <button data-tab="effects">Эффекты</button>
   <button data-tab="scenes">Сцены</button>
+  <button data-tab="vcalib">Калибровка</button>
   <button data-tab="coords">Координаты</button>
 </nav>
 <main>
@@ -75,6 +76,37 @@
     </div>
   </section>
 
+  <section class="tab" id="tab-vcalib">
+    <div class="card">
+      <h2>1. Запусти серию</h2>
+      <ol class="steps">
+        <li>Закрепи телефон неподвижно так, чтобы вся гирлянда была в кадре. В комнате должно быть темно.</li>
+        <li>Нажми «Запустить серию». До её начала будет время, чтобы включить запись видео в камере (подойдёт и другое устройство).</li>
+        <li>Дождись конца серии и останови запись. Видео должно начаться до первой вспышки.</li>
+      </ol>
+      <div class="row"><label for="vDelay">Пауза до начала, с</label><input id="vDelay" type="number" min="0" max="120" value="12" inputmode="numeric"></div>
+      <div class="row"><label for="vStep">Шаг, мс на светодиод</label><input id="vStep" type="number" min="60" max="1000" value="120" inputmode="numeric"></div>
+      <p class="hint" id="vEstimate"></p>
+      <div class="row">
+        <button id="vStart" class="btn">Запустить серию</button>
+        <button id="vStop" class="btn secondary" disabled>Остановить</button>
+      </div>
+      <p class="hint" id="vStatus"></p>
+      <div class="bar"><div id="vBar"></div></div>
+    </div>
+    <div class="card">
+      <h2>2. Выбери видео</h2>
+      <input id="vFile" type="file" accept="video/*">
+      <div class="row">
+        <button id="vAnalyze" class="btn" disabled>Разобрать видео</button>
+        <button id="vCancel" class="btn secondary" hidden>Отмена</button>
+      </div>
+      <div class="bar"><div id="vBar2"></div></div>
+      <p class="hint" id="vResult"></p>
+      <p class="hint">Разбор идёт в браузере и занимает от десятков секунд до пары минут (видео перематывается по кадрам). Результат откроется на вкладке «Координаты»: проверь точки и сохрани.</p>
+    </div>
+  </section>
+
   <section class="tab" id="tab-coords">
     <div class="card">
       <h2>Координаты светодиодов</h2>
@@ -102,6 +134,7 @@
 <footer id="foot"></footer>
 <div id="toast" role="alert"></div>
 <script>
+//@calib.js
 //@app.js
 </script>
 </body>

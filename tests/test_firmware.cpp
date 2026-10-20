@@ -14,11 +14,16 @@ static void resetAll() {
   memset(xy, 0, sizeof(xy));
   for (auto& l : leds) l = CRGB();
   stripObj = CLEDController();
+  stripObj.record = false;
   stripObj.setLeds(leds, LED_MAX);
   udp.in.clear();
   udp.out.clear();
   forceTmr = Timer(30000, false);
   hlTmr = Timer(60000, false);
+  vcRun = false;
+  vcFrame = -1;
+  vcDelay = VC_DELAY_DEFAULT;
+  vcStep = VC_STEP_DEFAULT;
   switchTmr = Timer(0, false);
   offTmr = Timer(60000, false);
   calibF = false;
@@ -437,5 +442,6 @@ TEST(effects_respect_led_amount_and_limit) {
 #include "test_web_cases.h"
 #include "test_scene_cases.h"
 #include "test_coords_cases.h"
+#include "test_vcalib_cases.h"
 
 int main() { return runAllTests(); }

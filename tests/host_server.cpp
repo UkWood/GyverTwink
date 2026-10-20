@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
     fakeMillis() = 100000 + (uint32_t)ms;   // настоящее время для "антидребезга" и таймеров
     parsing();
     webTick();
+    vcalibTick();
     int lit = -1;   // номер горящего светодиода (подсветка в редакторе координат)
     for (int i = 0; i < LED_MAX && lit < 0; i++) {
       if (leds[i].r || leds[i].g || leds[i].b) lit = i;
