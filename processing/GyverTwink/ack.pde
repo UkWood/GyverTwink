@@ -20,6 +20,7 @@ ArrayList<PendingCmd> ackQueue = new ArrayList<PendingCmd>();
 void ackReset() {
   synchronized (ackQueue) {
     ackMode = false;
+    limitKnown = false;
     ackQueue.clear();
   }
 }
@@ -33,7 +34,10 @@ void ackEnable() {
     if (first) ackSeq = int(random(256));
   }
   // запрос настроек с ACK задаёт прошивке известный seq (запросы выполняются всегда)
-  if (first) sendData(new int[] {1});
+  if (first) {
+    sendData(new int[] {1});
+    sendData(new int[] {7});   // лимит тока (ответ покажет поле в настройках)
+  }
 }
 
 // ключ слияния: новое значение параметра заменяет ещё не отправленное старое (ползунки)

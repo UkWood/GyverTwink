@@ -6,6 +6,11 @@ void receive(byte[] ubuf) {
     ackEnable();
     return;
   }
+  if (ubuf.length >= 5 && (ubuf[2] & 0xFF) == 7) {   // лимит тока {7, mA/100, mA%100}
+    maLimit.text = str((ubuf[3] & 0xFF) * 100 + (ubuf[4] & 0xFF));
+    limitKnown = true;
+    return;
+  }
   if (ubuf.length >= 6 && (ubuf[2] & 0xFF) == 6) {
     ackReceived(ubuf[4] & 0xFF, ubuf[5] & 0xFF);
     return;

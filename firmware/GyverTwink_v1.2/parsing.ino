@@ -27,7 +27,7 @@ void sendAck(byte cmd, byte seq, byte status) {
 
 // запросы можно безопасно выполнять повторно (повтор нужен, чтобы заново получить ответ)
 bool isQuery() {
-  return ubuf[2] == 0 || ubuf[2] == 1 || (ubuf[2] == 4 && ubuf[3] == 0);
+  return ubuf[2] == 0 || ubuf[2] == 1 || ubuf[2] == 7 || (ubuf[2] == 4 && ubuf[3] == 0);
 }
 
 void handlePacket();
