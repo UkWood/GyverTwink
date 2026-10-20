@@ -430,4 +430,6 @@ TEST(effects_respect_led_amount_and_limit) {
   CHECK(stripObj.shown.back() < 200);
 }
 
+#include "test_web_cases.h"
+
 int main() { return runAllTests(); }

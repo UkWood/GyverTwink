@@ -106,47 +106,29 @@ void handlePacket() {
       break;
 
     case 2:   // приём настроек
-      forceTmr.stop();
+      settingsTouch();
       switch (ubuf[3]) {
-        case 0: cfg.ledAm = constrain(ubuf[4] * 100 + ubuf[5], 1, LED_MAX);
-          strip->setLeds(leds, cfg.ledAm);
+        case 0: setLedAmount(ubuf[4] * 100 + ubuf[5]);
           break;
-        case 1: cfg.power = ubuf[4];
+        case 1: setPower(ubuf[4]);
           break;
-        case 2: cfg.bright = ubuf[4];
+        case 2: setBright(ubuf[4]);
           break;
-        case 3: cfg.autoCh = ubuf[4];
-          if (cfg.autoCh) switchTmr.restart();
-          else switchTmr.stop();
+        case 3: setAutoSwitch(ubuf[4]);
           break;
-        case 4: cfg.rndCh = ubuf[4];
+        case 4: setRandomSwitch(ubuf[4]);
           break;
-        case 5: cfg.prdCh = ubuf[4];
-          switchTmr.setPrd(cfg.prdCh * 60000ul);
-          if (cfg.autoCh) switchTmr.restart();
+        case 5: setPeriod(ubuf[4]);
           break;
-        case 6:   // нехт эффект
-          switchEff();
-          if (cfg.autoCh) switchTmr.restart();
-          return;
+        case 6: nextEffect();   // следующий эффект
           break;
-        case 7:
-          cfg.turnOff = ubuf[4];
-          if (cfg.turnOff) offTmr.restart();
-          else offTmr.stop();
+        case 7: setOffTimer(ubuf[4]);
           break;
-        case 8:
-          cfg.offTmr = ubuf[4];
-          offTmr.setPrd(cfg.offTmr * 60000ul);
-          if (cfg.turnOff) offTmr.restart();
+        case 8: setOffMinutes(ubuf[4]);
           break;
-        case 9:   // лимит тока в мА (расширение): ubuf[4] * 100 + ubuf[5], 0 - выключен
-          pwr.maxMa = ubuf[4] * 100 + ubuf[5];
-          EEpwr.update();
+        case 9: setMaxMa(ubuf[4] * 100 + ubuf[5]);   // лимит тока в мА (расширение), 0 - выключен
           break;
       }
-      if (!cfg.power) strip->showLeds(0);
-      EEcfg.update();
       break;
 
     case 3:

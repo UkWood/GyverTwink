@@ -6,10 +6,12 @@
 #define LED_MAX 500
 #define POWER_LIMIT_MA 0
 #define POWER_VOLTS 5
+#define FW_VERSION "host"
 #define DEBUGLN(x)
 #define DEBUG(x)
 
 #include "../firmware/GyverTwink_v1.2/Timer.h"
+#include "../firmware/GyverTwink_v1.2/web_page.h"
 #include "../firmware/GyverTwink_v1.2/types.h"
 
 // ---- глобальные объекты, как в GyverTwink_v1.2.ino ----
@@ -25,6 +27,8 @@ Pwr pwr;
 Effects effs[ACTIVE_PALETTES * 2];
 EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
+// порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
+ESP8266WebServer webServer(getenv("GT_WEB_PORT") ? atoi(getenv("GT_WEB_PORT")) : 0);
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
 Timer offTmr(60000, false);
@@ -35,6 +39,8 @@ byte forceEff = 0;
 // ---- тестируемый код ----
 #include "../firmware/GyverTwink_v1.2/power.ino"
 #include "../firmware/GyverTwink_v1.2/switcher.ino"
+#include "../firmware/GyverTwink_v1.2/settings.ino"
 #include "../firmware/GyverTwink_v1.2/effects.ino"
 #include "../firmware/GyverTwink_v1.2/parsing.ino"
+#include "../firmware/GyverTwink_v1.2/web.ino"
 

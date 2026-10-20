@@ -56,3 +56,33 @@ jobs:
       - uses: actions/checkout@v4
       - name: Protocol stand (Python client with ACK/retries against the real firmware code, lossy UDP)
         run: make -C tests stand
+
+  web-page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: web_page.h соответствует исходникам web/ (запусти tools/gen_web.py, если нет)
+        run: python3 tools/gen_web.py --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Синтаксис app.js
+        run: node --check web/app.js
+
+  web-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright и Chromium
+        run: |
+          npm install --prefix tests/web
+          npx --prefix tests/web playwright install --with-deps chromium
+      - name: Хост-сервер с настоящим кодом прошивки
+        run: make -C tests gt_host
+      - name: e2e-тест веб-интерфейса
+        run: node tests/web/ui_test.mjs ./tests/gt_host

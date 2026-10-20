@@ -13,6 +13,11 @@
 - `minitest.h` — минимальный каркас (`TEST`, `CHECK`, `CHECK_EQ`).
 - `test_firmware.cpp` — сами тесты.
 
+## Веб-интерфейс
+- Обработчики `web.ino` проверяются в тех же юнит-тестах (`test_web_cases.h`): заглушка `ESP8266WebServer` умеет выполнять запрос без сети (`test()`).
+- `node tests/web/ui_test.mjs ./tests/gt_host` — e2e: `gt_host` с настоящим кодом прошивки (порт веба из переменной `GT_WEB_PORT`) и страница в настоящем Chromium (Playwright,
+  `npm install --prefix tests/web`). Тест проверяет и интерфейс, и то, что реально изменилось в прошивке (строки `STATE` на stdout), и что изменения по UDP видны на странице.
+
 ## Стенд протокола (`make -C tests stand`)
 Второй уровень: тот же настоящий код прошивки собирается как сервер `gt_host`, который слушает UDP на 127.0.0.1
 (`host_server.cpp`, сокетная версия `WiFiUDP` в `host_stubs.h`). Python-скрипт `protocol_stand.py` ставит между собой и сервером
