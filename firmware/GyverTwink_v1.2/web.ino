@@ -148,7 +148,76 @@ static void handleEffectPost() {
   webSendEffect(n);
 }
 
+// ---------- сцены ----------
+static void webSendScenes() {
+  char b[700];
+  int n = snprintf(b, sizeof(b), "{\"max\":%d,\"scenes\":[", SCENE_SLOTS);
+  bool first = true;
+  for (int i = 0; i < SCENE_SLOTS && n < (int)sizeof(b) - 60; i++) {
+    if (scenes[i].used != 1) continue;
+    n += snprintf(b + n, sizeof(b) - n, "%s{\"i\":%d,\"name\":\"%s\"}", first ? "" : ",", i, scenes[i].name);
+    first = false;
+  }
+  snprintf(b + n, sizeof(b) - n, "]}");
+  webJson(200, b);
+}
+
+static bool webSlotArg(long& slot) {
+  if (webArgInt("slot", 0, SCENE_SLOTS - 1, slot) > 0) return true;
+  webError(400, "slot");
+  return false;
+}
+
+static void handleScenesGet() {
+  webSendScenes();
+}
+
+// POST /api/scenes/save: slot и name - сохранить текущие настройки
+static void handleSceneSave() {
+  if (!webAllowed()) return;
+  long slot;
+  if (!webSlotArg(slot)) return;
+  char name[SCENE_NAME_LEN + 1];
+  if (!webServer.hasArg("name") || sceneCleanName(webServer.arg("name").c_str(), name) < 0) {
+    webError(400, "name");
+    return;
+  }
+  if (!sceneSave(slot, name)) {
+    webError(500, "fs");
+    return;
+  }
+  webSendScenes();
+}
+
+// POST /api/scenes/load: slot - применить сцену, в ответе новое состояние
+static void handleSceneLoad() {
+  if (!webAllowed()) return;
+  long slot;
+  if (!webSlotArg(slot)) return;
+  if (!sceneLoad(slot)) {
+    webError(404, "empty");
+    return;
+  }
+  webSendState();
+}
+
+static void handleSceneDelete() {
+  if (!webAllowed()) return;
+  long slot;
+  if (!webSlotArg(slot)) return;
+  if (scenes[slot].used != 1) {
+    webError(404, "empty");
+    return;
+  }
+  if (!sceneDelete(slot)) {
+    webError(500, "fs");
+    return;
+  }
+  webSendScenes();
+}
+
 void webBegin() {
+  scenesBegin();
   static const char* hdrs[] = {WEB_HDR};
   // (size_t): на ядре 3.x без приведения выбирается шаблон collectHeaders(const Args&...) и сборка падает
   webServer.collectHeaders(hdrs, (size_t)1);
@@ -158,6 +227,10 @@ void webBegin() {
   webServer.on("/api/next", HTTP_POST, handleNext);
   webServer.on("/api/effect", HTTP_GET, handleEffectGet);
   webServer.on("/api/effect", HTTP_POST, handleEffectPost);
+  webServer.on("/api/scenes", HTTP_GET, handleScenesGet);
+  webServer.on("/api/scenes/save", HTTP_POST, handleSceneSave);
+  webServer.on("/api/scenes/load", HTTP_POST, handleSceneLoad);
+  webServer.on("/api/scenes/delete", HTTP_POST, handleSceneDelete);
   webServer.onNotFound([]() { webError(404, "not found"); });
   webServer.begin();
   if (MDNS.begin(MDNS_NAME)) MDNS.addService("http", "tcp", 80);

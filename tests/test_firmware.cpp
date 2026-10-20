@@ -27,6 +27,9 @@ static void resetAll() {
   EExy = EEManager(xy);
   EEmm = EEManager(mm);
   EEpwr = EEManager(pwr);
+  LittleFS.files.clear();
+  LittleFS.failWrites = false;
+  memset(scenes, 0, sizeof(scenes));
   fakeMillis() += 1000;   // чтобы не попасть в "антидребезг" предыдущего теста
 }
 
@@ -431,5 +434,6 @@ TEST(effects_respect_led_amount_and_limit) {
 }
 
 #include "test_web_cases.h"
+#include "test_scene_cases.h"
 
 int main() { return runAllTests(); }

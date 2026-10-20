@@ -16,6 +16,7 @@
 <nav id="tabs">
   <button data-tab="control" class="active">Управление</button>
   <button data-tab="effects">Эффекты</button>
+  <button data-tab="scenes">Сцены</button>
 </nav>
 <main>
   <section class="tab active" id="tab-control">
@@ -54,6 +55,22 @@
       <div class="row"><label for="effScale">Масштаб</label><input id="effScale" type="range" min="0" max="255"><span class="val" id="effScale-val"></span></div>
       <div class="row"><label for="effSpeed">Скорость</label><input id="effSpeed" type="range" min="0" max="255"><span class="val" id="effSpeed-val"></span></div>
       <p class="hint">Выбранный эффект показывается 30 секунд, потом лента вернётся к обычной смене.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-scenes">
+    <div class="card">
+      <h2>Сохранить текущие настройки</h2>
+      <div class="row">
+        <input id="sceneName" type="text" placeholder="Название сцены" autocomplete="off">
+        <button id="sceneSave" class="btn">Сохранить</button>
+      </div>
+      <p class="hint">Название — до 16 байт (8 русских букв). В сцену входят яркость, автосмена, случайный порядок, период, текущий эффект и настройки всех эффектов. Питание, число светодиодов и лимит тока не сохраняются.</p>
+    </div>
+    <div class="card">
+      <h2>Мои сцены</h2>
+      <ul id="sceneList"></ul>
+      <p id="sceneEmpty" class="hint">Пока нет сохранённых сцен.</p>
     </div>
   </section>
 </main>
