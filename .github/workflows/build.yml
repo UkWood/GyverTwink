@@ -35,6 +35,12 @@ jobs:
       - name: Build
         run: pio run -e ${{ matrix.env }}
 
+      - name: Размер прошивки (должна помещаться в раздел OTA, около 1 МБ)
+        run: |
+          size=$(stat -c%s .pio/build/${{ matrix.env }}/firmware.bin)
+          echo "firmware.bin: $size байт"
+          test "$size" -lt 921600
+
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:

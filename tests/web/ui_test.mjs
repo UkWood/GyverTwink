@@ -50,12 +50,13 @@ const udpPort = await freePort('udp');
 const webPort = await freePort('tcp');
 const fsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gt-fs-'));   // "флеш" гирлянды: переживает перезапуск сервера
 let server = null;
+const otaOut = path.join(fsDir, 'ota-received.bin');   // сюда хост-сервер сохраняет принятую прошивку перед «перезагрузкой»
 let state = {};
 
 async function startServer() {
   state = {};
   let buf = '';
-  server = spawn(exe, [String(udpPort)], { env: { ...process.env, GT_WEB_PORT: String(webPort), GT_FS_DIR: fsDir } });
+  server = spawn(exe, [String(udpPort)], { env: { ...process.env, GT_WEB_PORT: String(webPort), GT_FS_DIR: fsDir, GT_OTA_OUT: otaOut } });
   const ready = new Promise((resolve) => {
     server.stdout.on('data', (d) => {
       buf += d;
@@ -414,6 +415,56 @@ try {
     check(await until(async () => (await page.textContent('#vResult')).includes('Прервано'), 60000), 'отмена прерывает разбор');
     check(await fitsScreen(), 'вкладка «Калибровка» помещается по ширине экрана 390 px');
     await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_vcalib.png'), fullPage: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
+    await page.click('[data-tab=control]');
+    jsErrors.length = 0;
+  }
+
+
+  console.log('вкладка «Прошивка» (обновление по WiFi)');
+  {
+    await page.click('[data-tab=ota]');
+    check((await page.textContent('#otaVer')) === 'host', 'показана текущая версия');
+    check(await until(async () => (await page.textContent('#otaStatus')).includes('Окно закрыто')), 'окно закрыто: подсказка нажать кнопку три раза');
+    const notFw = Buffer.alloc(4096, 0x7f);
+    const fw = Buffer.alloc(40000);
+    for (let i = 0; i < fw.length; i++) fw[i] = (i * 131 + 7) & 255;
+    fw[0] = 0xe9;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gt-fw-'));
+    fs.writeFileSync(path.join(tmp, 'notfw.bin'), notFw);
+    fs.writeFileSync(path.join(tmp, 'firmware.bin'), fw);
+    await page.setInputFiles('#otaFile', path.join(tmp, 'notfw.bin'));
+    check(await until(async () => (await page.textContent('#otaResult')).includes('0xE9')), 'файл не с байта 0xE9: понятное предупреждение до загрузки');
+    await page.setInputFiles('#otaFile', path.join(tmp, 'firmware.bin'));
+    check(await until(async () => (await page.textContent('#otaResult')) === ''), 'подходящий файл: предупреждения нет');
+    check(await page.isDisabled('#otaGo'), 'пока окно закрыто, загрузка недоступна');
+
+    // закрытое окно отклоняет запрос и «по сети»
+    const mp = () => { const fd = new FormData(); fd.append('firmware', new Blob([fw]), 'firmware.bin'); return fd; };
+    let r = await fetch(base + '/update', { method: 'POST', headers: { 'X-Requested-With': 'GyverTwink' }, body: mp() });
+    check(r.status === 403, 'закрытое окно: загрузка отклоняется (403)');
+
+    // физическое действие: три нажатия кнопки
+    server.stdin.write('BUTTON3\n');
+    check(await stateIs('ota', 1), 'три нажатия кнопки открыли окно на гирлянде');
+    check(await until(async () => (await page.textContent('#otaStatus')).includes('Окно обновления открыто'), 5000), 'страница показала открытое окно с обратным отсчётом');
+    check(await until(async () => !(await page.isDisabled('#otaGo')), 3000), 'кнопка загрузки стала доступна');
+    r = await fetch(base + '/update', { method: 'POST', body: mp() });
+    check(r.status === 403, 'без заголовка страницы загрузка отклоняется даже при открытом окне');
+    check(state.ota === 1, 'отказ окно не закрывает');
+
+    page.once('dialog', (d) => d.accept());
+    await page.click('#otaGo');
+    check(await until(async () => (await page.textContent('#otaResult')).includes('Прошивка записана'), 20000), 'загрузка завершена: прошивка записана');
+    await new Promise((resolve) => (server.exitCode !== null ? resolve() : server.once('exit', resolve)));
+    check(fs.existsSync(otaOut) && Buffer.compare(fs.readFileSync(otaOut), fw) === 0, 'гирлянда получила файл побайтно без искажений (' + fw.length + ' байт)');
+    await startServer();   // «перезагрузка»
+    check(await until(async () => (await page.textContent('#otaResult')).includes('Готово. Версия прошивки: host'), 30000), 'страница дождалась возвращения гирлянды и показала версию');
+    check(await stateIs('ota', 0), 'после обновления окно закрыто');
+    await page.setInputFiles('#otaFile', path.join(tmp, 'firmware.bin'));
+    check(await page.isDisabled('#otaGo'), 'повторная загрузка без новых трёх нажатий недоступна');
+    check(await fitsScreen(), 'вкладка «Прошивка» помещается по ширине экрана 390 px');
+    await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_ota.png'), fullPage: true });
     fs.rmSync(tmp, { recursive: true, force: true });
     await page.click('[data-tab=control]');
     jsErrors.length = 0;

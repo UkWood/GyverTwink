@@ -14,6 +14,12 @@ void button() {
     switchEff();
   }
   
+  if (btn.hasClicks(3)) {
+    DEBUGLN("3x click - OTA window");
+    otaOpenWindow();       // окно обновления прошивки по WiFi (ota.ino)
+    fadeBlink(CRGB::Cyan);   // голубая вспышка: окно открыто
+  }
+
   if (btn.step()) {
     DEBUGLN("change bright");
     if (cfg.power) {

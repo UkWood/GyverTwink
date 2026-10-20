@@ -20,6 +20,12 @@ static void resetAll() {
   udp.out.clear();
   forceTmr = Timer(30000, false);
   hlTmr = Timer(60000, false);
+  otaTmr = Timer(300000, false);
+  otaBusy = false;
+  otaRebootAt = 0;
+  Update = UpdateClass();
+  ESP = EspClass();
+  btn = EncButtonStub();
   vcRun = false;
   vcFrame = -1;
   vcDelay = VC_DELAY_DEFAULT;
@@ -443,5 +449,6 @@ TEST(effects_respect_led_amount_and_limit) {
 #include "test_scene_cases.h"
 #include "test_coords_cases.h"
 #include "test_vcalib_cases.h"
+#include "test_ota_cases.h"
 
 int main() { return runAllTests(); }

@@ -253,8 +253,81 @@ inline LittleFSClass LittleFS;
 // ---- ESP ----
 struct EspClass {
   uint32_t getFreeHeap() { return 40000; }
+  uint32_t freeSketchSpace = 1019904;   // как у d1_mini с разделом под OTA
+  bool restarted = false;
+  uint32_t getFreeSketchSpace() { return freeSketchSpace; }
+  void restart() { restarted = true; }
 };
 inline EspClass ESP;
+
+// ---- Update (запись прошивки): принимает образ в память, проверяет маркерный байт 0xE9, как настоящая библиотека ----
+struct UpdateClass {
+  std::vector<uint8_t> data;
+  bool began = false, ended = false, error = false;
+  uint32_t space = 0;
+  bool failBegin = false;   // тест: не хватает места
+  int failWriteAfter = -1;  // тест: сбой записи после стольких байт (-1 - нет)
+  bool begin(uint32_t maxSpace) {
+    data.clear();
+    began = true;
+    ended = false;
+    error = false;
+    space = maxSpace;
+    if (failBegin || maxSpace == 0) error = true;
+    return !error;
+  }
+  size_t write(const uint8_t* b, size_t n) {
+    if (!began || error) return 0;
+    if (data.empty() && n && b[0] != 0xE9) {
+      error = true;   // UPDATE_ERROR_MAGIC_BYTE
+      return 0;
+    }
+    if (data.size() + n > space) {
+      error = true;   // UPDATE_ERROR_SPACE
+      return 0;
+    }
+    if (failWriteAfter >= 0 && (int)(data.size() + n) > failWriteAfter) {
+      error = true;
+      return 0;
+    }
+    data.insert(data.end(), b, b + n);
+    return n;
+  }
+  bool end(bool evenIfRemaining = false) {
+    // размер образа заранее неизвестен (begin(maxSpace)), поэтому без evenIfRemaining недозаписанный образ - ошибка
+    bool ok = began && !error && !data.empty() && evenIfRemaining;
+    if (began && !ended) ended = true;
+    if (!ok) error = true;
+    began = false;
+    return ok;
+  }
+  bool hasError() { return error; }
+};
+inline UpdateClass Update;
+
+// ---- кнопка: сценарий нажатий задаётся тестом ----
+struct EncButtonStub {
+  int clicks = 0;   // сколько нажатий "выдать" в ближайшем tick
+  bool stepF = false, relF = false;
+  void tick() {}
+  bool hasClicks(int n) {
+    if (clicks == n) {
+      clicks = 0;
+      return true;
+    }
+    return false;
+  }
+  bool step() {
+    bool r = stepF;
+    stepF = false;
+    return r;
+  }
+  bool releaseStep() {
+    bool r = relF;
+    relF = false;
+    return r;
+  }
+};
 
 // ---- mDNS ----
 struct MDNSResponder {
@@ -343,6 +416,17 @@ public:
     return dispatch();
   }
 
+  // ---- загрузка файла без сети: куски вызывают обработчик загрузки, потом основной (как multipart в настоящей библиотеке) ----
+  Response testUpload(const std::string& uri, const std::map<std::string, std::string>& headers, const std::string& filename,
+                      const std::vector<std::string>& chunks, bool abortAfterFirst = false) {
+    _method = HTTP_POST;
+    _uri = uri;
+    _args.clear();
+    _headers.clear();
+    for (auto& h : headers) _headers[lower(h.first)] = h.second;
+    return runUpload(filename, chunks, abortAfterFirst);
+  }
+
   // ---- режим с сетью ----
   bool begin() { return begin(_port); }
   bool begin(int port) {
@@ -385,6 +469,45 @@ private:
     for (auto& ch : s) ch = (char)tolower((unsigned char)ch);
     return s;
   }
+  Response runUpload(const std::string& filename, const std::vector<std::string>& chunks, bool abortAfterFirst) {
+    _resp = Response();
+    Route* r = nullptr;
+    for (auto& x : _routes) {
+      if (x.uri == _uri && x.upload && (x.method == HTTP_ANY || x.method == _method)) r = &x;
+    }
+    if (!r) {
+      send(404, "text/plain", "Not found");
+      return _resp;
+    }
+    _upload = HTTPUpload();
+    _upload.filename = filename;
+    _upload.status = UPLOAD_FILE_START;
+    r->upload();
+    size_t total = 0;
+    for (size_t k = 0; k < chunks.size(); k++) {
+      for (size_t off = 0; off < chunks[k].size() || (off == 0 && chunks[k].empty()); off += sizeof(_upload.buf)) {
+        size_t n = std::min(sizeof(_upload.buf), chunks[k].size() - off);
+        memcpy(_upload.buf, chunks[k].data() + off, n);
+        _upload.currentSize = n;
+        total += n;
+        _upload.totalSize = total;
+        _upload.status = UPLOAD_FILE_WRITE;
+        r->upload();
+        if (chunks[k].empty()) break;
+      }
+      if (abortAfterFirst && k == 0) {
+        _upload.status = UPLOAD_FILE_ABORTED;   // соединение оборвалось: основной обработчик не вызывается, ответа нет
+        r->upload();
+        return _resp;
+      }
+    }
+    _upload.status = UPLOAD_FILE_END;
+    _upload.totalSize = total;
+    r->upload();
+    r->handler();
+    return _resp;
+  }
+
   Response dispatch() {
     _resp = Response();
     THandlerFunction h;
@@ -467,6 +590,42 @@ private:
       p = e + 2;
     }
     std::string body = req.substr(hdrEnd + 4);
+    std::string allHdr = lower(req.substr(0, hdrEnd));
+    size_t mp = allHdr.find("multipart/form-data");
+    if (mp != std::string::npos) {
+      // граница и файл первой части
+      size_t bpos = allHdr.find("boundary=", mp);
+      size_t bend = allHdr.find("\r\n", bpos);
+      std::string boundary = "--" + req.substr(hdrEnd - (allHdr.size() - bpos) + 9, bend == std::string::npos ? std::string::npos : bend - bpos - 9);
+      size_t partStart = body.find(boundary);
+      size_t dataStart = body.find("\r\n\r\n", partStart);
+      size_t dataEnd = body.find("\r\n" + boundary, dataStart);
+      std::string fname;
+      size_t fn = body.find("filename=\"", partStart);
+      if (fn != std::string::npos && fn < dataStart) fname = body.substr(fn + 10, body.find('"', fn + 10) - fn - 10);
+      if (partStart == std::string::npos || dataStart == std::string::npos || dataEnd == std::string::npos) {
+        send(400, "text/plain", "bad multipart");
+        _resp.code = 400;
+      } else {
+        std::string file = body.substr(dataStart + 4, dataEnd - dataStart - 4);
+        std::vector<std::string> chunks;
+        for (size_t off = 0; off < file.size(); off += 1460) chunks.push_back(file.substr(off, 1460));
+        if (chunks.empty()) chunks.push_back("");
+        runUpload(fname, chunks, false);
+      }
+      Response r = _resp;
+      std::string out = "HTTP/1.1 " + std::to_string(r.code) + " X\r\nContent-Type: " + r.type + "\r\nContent-Length: " +
+                        std::to_string(r.body.size()) + "\r\nConnection: close\r\n";
+      for (auto& h : r.headers) out += h.first + ": " + h.second + "\r\n";
+      out += "\r\n" + r.body;
+      size_t sent = 0;
+      while (sent < out.size()) {
+        ssize_t n = ::send(c, out.data() + sent, out.size() - sent, 0);
+        if (n <= 0) break;
+        sent += n;
+      }
+      return;
+    }
     if (!body.empty()) {
       // как в настоящей библиотеке: urlencoded разбирается в аргументы, остальное - в "plain"
       std::string all = req.substr(0, hdrEnd);
@@ -499,7 +658,7 @@ struct EEManager {
 // ---- FastLED ----
 struct CRGB {
   uint8_t r = 0, g = 0, b = 0;
-  enum HTMLColorCode : uint32_t { Black = 0, White = 0xFFFFFF, Red = 0xFF0000 };
+  enum HTMLColorCode : uint32_t { Black = 0, White = 0xFFFFFF, Red = 0xFF0000, Cyan = 0x00FFFF, Blue = 0x0000FF, Green = 0x008000 };
   CRGB() {}
   CRGB(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
   CRGB(HTMLColorCode c) : r(c >> 16), g(c >> 8), b(c) {}
@@ -525,6 +684,7 @@ struct CLEDController {
   void clearLedData() {
     for (int i = 0; i < count; i++) data[i] = CRGB();
   }
+  void showColor(const CRGB&, uint8_t bri) { shown.push_back(bri); }
   void showLeds(uint8_t bri = 255) {
     shown.push_back(bri);
     if (!record) return;

@@ -29,6 +29,8 @@ const ERROR_TEXT = {
   i: 'Недопустимый номер светодиода',
   off: 'Недопустимый запрос подсветки',
   'not found': 'Устройство не знает такого запроса (устаревшая прошивка?)',
+  'ota-closed': 'Окно обновления закрыто. Нажми кнопку на гирлянде три раза подряд',
+  update: 'Гирлянда отклонила файл: это не подходящая прошивка или она не помещается',
 };
 function describeError(code, status) {
   if (ERROR_TEXT[code]) return ERROR_TEXT[code];
@@ -845,6 +847,115 @@ function initVcalib() {
   document.addEventListener('gt-tab', (e) => { if (e.detail === 'vcalib') vcRefresh(); });
 }
 
+// ---------- вкладка «Прошивка» (OTA) ----------
+const ota = { st: null, timer: 0, busy: false };
+
+// прошивка ESP8266 начинается с байта 0xE9; проверяем до загрузки, чтобы не гонять по сети заведомо неподходящий файл
+async function otaCheckFile(file) {
+  if (!file) return 'Выбери файл firmware.bin';
+  if (file.size < 1024) return 'Файл слишком маленький для прошивки';
+  if (file.size > 1048576) return 'Файл больше 1 МБ: для обновления по воздуху прошивка должна помещаться в раздел OTA';
+  const first = new Uint8Array(await file.slice(0, 1).arrayBuffer());
+  if (first[0] !== 0xE9) return 'Это не прошивка для ESP8266: файл должен начинаться с байта 0xE9. Нужен firmware.bin, а не .elf или .map';
+  return '';
+}
+
+function otaRender() {
+  const s = ota.st;
+  if (!s) return;
+  const mm = Math.floor(s.left / 60);
+  const ss = String(s.left % 60).padStart(2, '0');
+  $('otaStatus').textContent = s.open ? 'Окно обновления открыто: осталось ' + mm + ':' + ss + '.' : 'Окно закрыто. Нажми кнопку на гирлянде три раза подряд.';
+  $('otaGo').disabled = !(s.open && $('otaFile').files.length) || ota.busy;
+}
+
+async function otaRefresh() {
+  try {
+    ota.st = await api.get('/api/ota');
+    otaRender();
+  } catch (e) { /* связь могла пропасть из-за перезагрузки */ }
+  clearTimeout(ota.timer);
+  if (document.getElementById('tab-ota').classList.contains('active') && !ota.busy) ota.timer = setTimeout(otaRefresh, 1000);
+}
+
+function otaSend(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();   // fetch не умеет сообщать о ходе загрузки
+    x.open('POST', '/update');
+    x.setRequestHeader('X-Requested-With', 'GyverTwink');
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let j = {};
+      try { j = JSON.parse(x.responseText); } catch (e) { /* не JSON */ }
+      if (x.status === 200) { resolve(j); return; }
+      const err = new Error(describeError(j.error, x.status));
+      err.code = j.error;
+      reject(err);
+    };
+    x.onerror = () => reject(new Error('Нет связи с гирляндой во время загрузки'));
+    const fd = new FormData();
+    fd.append('firmware', file, file.name);
+    x.send(fd);
+  });
+}
+
+async function otaUpload() {
+  const file = $('otaFile').files[0];
+  const bad = await otaCheckFile(file);
+  if (bad) { $('otaResult').textContent = bad; toast(bad); return; }
+  if (!confirm('Прошить гирлянду файлом ' + file.name + ' (' + Math.round(file.size / 1024) + ' КБ)? Не выключай питание, пока идёт запись.')) return;
+  ota.busy = true;
+  $('otaGo').disabled = true;
+  $('otaBar').style.width = '0%';
+  $('otaResult').textContent = 'Загружаю…';
+  try {
+    await otaSend(file, (f) => {
+      $('otaBar').style.width = Math.round(f * 100) + '%';
+      $('otaResult').textContent = 'Загружаю: ' + Math.round(f * 100) + '%';
+    });
+    $('otaBar').style.width = '100%';
+    $('otaResult').textContent = 'Прошивка записана, гирлянда перезагружается…';
+    // ждём возвращения: сначала связь пропадает, потом гирлянда снова отвечает
+    const old = st && st.fw;
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const s = await api.get('/api/state');
+        if (i >= 2) {
+          st = s;
+          render(true);
+          $('otaResult').textContent = 'Готово. Версия прошивки: ' + s.fw + (old && old !== s.fw ? ' (была ' + old + ')' : '') + '.';
+          $('otaVer').textContent = s.fw;
+          toast('Прошивка обновлена', true);
+          break;
+        }
+      } catch (e) { /* ещё перезагружается */ }
+      if (i === 59) $('otaResult').textContent = 'Гирлянда долго не отвечает. Подожди минуту и обнови страницу.';
+    }
+  } catch (e) {
+    $('otaResult').textContent = e.message;
+    toast(e.message);
+  } finally {
+    ota.busy = false;
+    otaRefresh();
+  }
+}
+
+function initOta() {
+  $('otaFile').addEventListener('change', async () => {
+    const msg = await otaCheckFile($('otaFile').files[0]);
+    $('otaResult').textContent = msg;
+    otaRender();
+  });
+  $('otaGo').addEventListener('click', otaUpload);
+  document.addEventListener('gt-tab', (e) => {
+    if (e.detail === 'ota') {
+      if (st) $('otaVer').textContent = st.fw;
+      otaRefresh();
+    }
+  });
+}
+
 // ---------- вкладки ----------
 function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
@@ -866,6 +977,7 @@ function init() {
   initScenes();
   initCoords();
   initVcalib();
+  initOta();
   refresh();
   setInterval(refresh, 2000);
 }
