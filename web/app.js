@@ -17,8 +17,21 @@ const FIELD_NAMES = {
   period: 'период смены', offOn: 'таймер выключения', offMin: 'минуты до выключения', maxMa: 'лимит тока',
   n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта',
 };
+// не относящиеся к параметрам коды ошибок прошивки
+const ERROR_TEXT = {
+  forbidden: 'Запрос отклонён устройством',
+  count: 'Число светодиодов изменилось, данные перезагружены. Повтори правку',
+  xy: 'Некорректные координаты',
+  fs: 'Не удалось записать во флеш-память гирлянды',
+  empty: 'Это место пусто',
+  slot: 'Недопустимое место для сцены',
+  name: 'Недопустимое название',
+  i: 'Недопустимый номер светодиода',
+  off: 'Недопустимый запрос подсветки',
+  'not found': 'Устройство не знает такого запроса (устаревшая прошивка?)',
+};
 function describeError(code, status) {
-  if (code === 'forbidden') return 'Запрос отклонён устройством';
+  if (ERROR_TEXT[code]) return ERROR_TEXT[code];
   if (FIELD_NAMES[code]) return 'Недопустимое значение: ' + FIELD_NAMES[code];
   return code || ('Ошибка ' + status);
 }
@@ -46,7 +59,11 @@ const api = {
     const r = await fetch(url, opt);
     let data = {};
     try { data = await r.json(); } catch (e) { /* не JSON */ }
-    if (!r.ok) throw new Error(describeError(data.error, r.status));
+    if (!r.ok) {
+      const err = new Error(describeError(data.error, r.status));
+      err.code = data.error;
+      throw err;
+    }
     return data;
   },
   get(path, params) { return this.call('GET', path, params); },
@@ -341,6 +358,269 @@ function initScenes() {
   document.addEventListener('gt-tab', (e) => { if (e.detail === 'scenes') loadScenes(); });
 }
 
+// ---------- геометрия карты координат (чистые функции, проверяются в web/test) ----------
+function hexToPoints(hex) {
+  const pts = [];
+  for (let i = 0; i + 3 < hex.length; i += 4) {
+    pts.push({ x: parseInt(hex.substr(i, 2), 16), y: parseInt(hex.substr(i + 2, 2), 16) });
+  }
+  return pts;
+}
+
+function pointsToHex(pts) {
+  let s = '';
+  for (const p of pts) s += (p.x < 16 ? '0' : '') + p.x.toString(16) + (p.y < 16 ? '0' : '') + p.y.toString(16);
+  return s;
+}
+
+const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+
+// масштаб и сдвиг, при которых вся карта помещается в w x h с отступом pad; пропорции сохраняются
+function fitView(pts, w, h, pad) {
+  let minX = 255, maxX = 0, minY = 255, maxY = 0;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  if (!pts.length) { minX = minY = 0; maxX = maxY = 1; }
+  const rx = Math.max(maxX - minX, 1);
+  const ry = Math.max(maxY - minY, 1);
+  const s = Math.max(0.01, Math.min((w - 2 * pad) / rx, (h - 2 * pad) / ry));
+  return { s, ox: (w - rx * s) / 2 - minX * s, oy: (h - ry * s) / 2 - minY * s };
+}
+
+const toScreen = (p, v) => ({ x: v.ox + p.x * v.s, y: v.oy + p.y * v.s });
+const toWorld = (sx, sy, v) => ({ x: clamp255((sx - v.ox) / v.s), y: clamp255((sy - v.oy) / v.s) });
+
+// ближайшая к экранной точке карта-точка в пределах maxDist пикселей; при равенстве - с меньшим номером
+function nearestPoint(pts, sx, sy, v, maxDist) {
+  let best = -1;
+  let bestD = maxDist * maxDist;
+  for (let i = 0; i < pts.length; i++) {
+    const q = toScreen(pts[i], v);
+    const d = (q.x - sx) * (q.x - sx) + (q.y - sy) * (q.y - sy);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+// подозрительные точки: далеко от обоих соседей по ленте (для крайних - от единственного соседа).
+// Порог - k медианных шагов; один длинный шаг между секциями гирлянды точку подозрительной не делает.
+function suspiciousPoints(pts, k) {
+  const n = pts.length;
+  if (n < 4) return [];
+  const steps = [];
+  for (let i = 0; i + 1 < n; i++) steps.push(Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y));
+  const sorted = steps.slice().sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  if (!(med > 0)) return [];
+  const lim = (k || 4) * med;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const prev = i > 0 ? steps[i - 1] : null;
+    const next = i < n - 1 ? steps[i] : null;
+    const bad = (prev === null || prev > lim) && (next === null || next > lim);
+    if (bad) out.push(i);
+  }
+  return out;
+}
+
+// ---------- вкладка «Координаты» ----------
+const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [] };
+
+function coordsSetDirty(d) {
+  coords.dirty = d;
+  $('cSave').disabled = !d;
+  $('cUndo').disabled = !d;
+}
+
+function coordsLedLight() {
+  if (!coords.pts.length) return;
+  coords.lit = true;
+  api.post('/api/led', { i: coords.sel }).catch((e) => toast(e.message));
+}
+const coordsLedLightSoon = debounced(coordsLedLight, 120);
+
+function coordsLedOff() {
+  if (!coords.lit) return;
+  coords.lit = false;
+  api.post('/api/led', { off: 1 }).catch(() => {});
+}
+
+function coordsDraw() {
+  const cv = $('cCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const pts = coords.pts;
+  if (!pts.length) return;
+  const cs = getComputedStyle(document.documentElement);
+  const accent = cs.getPropertyValue('--accent').trim() || '#ffb020';
+  const line = cs.getPropertyValue('--muted').trim() || '#888';
+  const text = cs.getPropertyValue('--text').trim() || '#000';
+  coords.view = fitView(pts, w, h, 28);
+  const v = coords.view;
+  if ($('cLine').checked) {
+    g.strokeStyle = line;
+    g.globalAlpha = 0.45;
+    g.lineWidth = 1;
+    g.beginPath();
+    pts.forEach((p, i) => { const q = toScreen(p, v); if (i) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); });
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+  const r = pts.length > 300 ? 2.5 : 4;
+  pts.forEach((p, i) => {
+    const q = toScreen(p, v);
+    g.fillStyle = 'hsl(' + Math.round((i / pts.length) * 300) + ',80%,55%)';
+    g.beginPath();
+    g.arc(q.x, q.y, r, 0, 7);
+    g.fill();
+  });
+  g.lineWidth = 2;
+  g.strokeStyle = '#ff4d4d';
+  for (const i of coords.sus) {
+    const q = toScreen(pts[i], v);
+    g.beginPath();
+    g.arc(q.x, q.y, r + 5, 0, 7);
+    g.stroke();
+  }
+  const sp = pts[coords.sel];
+  if (sp) {
+    const q = toScreen(sp, v);
+    g.strokeStyle = accent;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(q.x, q.y, r + 6, 0, 7);
+    g.stroke();
+    g.fillStyle = text;
+    g.font = '12px system-ui, sans-serif';
+    g.fillText(String(coords.sel + 1), q.x + r + 8, q.y - r - 6);
+  }
+}
+
+function coordsRefreshInfo() {
+  coords.sus = suspiciousPoints(coords.pts, 4);
+  const n = coords.pts.length;
+  const empty = n > 0 && coords.pts.every((p) => p.x === coords.pts[0].x && p.y === coords.pts[0].y);
+  $('cEmpty').hidden = !empty;
+  $('cInfo').textContent = 'Светодиодов: ' + n + ', подозрительных: ' + coords.sus.length + (coords.dirty ? ' · есть несохранённые изменения' : '');
+}
+
+function coordsSync() {
+  const p = coords.pts[coords.sel];
+  if (p) {
+    if (document.activeElement !== $('cX')) $('cX').value = p.x;
+    if (document.activeElement !== $('cY')) $('cY').value = p.y;
+    if (document.activeElement !== $('cIdx')) $('cIdx').value = coords.sel + 1;
+  }
+  $('cIdx').max = Math.max(1, coords.pts.length);
+  coordsRefreshInfo();
+  coordsDraw();
+}
+
+function coordsSelect(i) {
+  const n = coords.pts.length;
+  if (!n) return;
+  coords.sel = ((i % n) + n) % n;
+  coordsSync();
+  coordsLedLightSoon();
+}
+
+async function coordsLoad() {
+  try {
+    const d = await api.get('/api/xy');
+    coords.pts = hexToPoints(d.xy);
+    coords.orig = coords.pts.map((p) => ({ x: p.x, y: p.y }));
+    coords.sel = Math.min(coords.sel, Math.max(0, coords.pts.length - 1));
+    coordsSetDirty(false);
+    coordsSync();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function coordsSave() {
+  try {
+    const r = await api.post('/api/xy', { n: coords.pts.length }, pointsToHex(coords.pts));
+    coords.orig = coords.pts.map((p) => ({ x: p.x, y: p.y }));
+    coordsSetDirty(false);
+    coordsRefreshInfo();
+    toast('Сохранено: размер карты ' + r.w + ' × ' + r.h, true);
+  } catch (e) {
+    toast(e.message);
+    if (e.code === 'count') coordsLoad();
+  }
+}
+
+function coordsEdit(i, x, y) {
+  coords.pts[i] = { x: clamp255(x), y: clamp255(y) };
+  coordsSetDirty(true);
+  coordsSync();
+}
+
+function initCoords() {
+  const cv = $('cCanvas');
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  cv.addEventListener('pointerdown', (e) => {
+    if (!coords.view) return;
+    const p = pos(e);
+    const i = nearestPoint(coords.pts, p.x, p.y, coords.view, 24);
+    if (i < 0) return;
+    cv.setPointerCapture(e.pointerId);
+    coords.drag = true;
+    coordsSelect(i);
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!coords.drag) return;
+    const p = pos(e);
+    const w = toWorld(p.x, p.y, coords.view);
+    coordsEdit(coords.sel, w.x, w.y);
+  });
+  const end = () => { coords.drag = false; };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  $('cPrev').addEventListener('click', () => coordsSelect(coords.sel - 1));
+  $('cNext').addEventListener('click', () => coordsSelect(coords.sel + 1));
+  $('cIdx').addEventListener('change', () => {
+    const v = parseInt($('cIdx').value, 10);
+    if (!isNaN(v)) coordsSelect(Math.max(1, Math.min(v, coords.pts.length)) - 1);
+  });
+  for (const [id, axis] of [['cX', 'x'], ['cY', 'y']]) {
+    $(id).addEventListener('change', () => {
+      const v = parseInt($(id).value, 10);
+      const p = coords.pts[coords.sel];
+      if (isNaN(v) || !p) { coordsSync(); return; }
+      coordsEdit(coords.sel, axis === 'x' ? v : p.x, axis === 'y' ? v : p.y);
+    });
+  }
+  $('cLine').addEventListener('change', coordsDraw);
+  $('cSave').addEventListener('click', coordsSave);
+  $('cUndo').addEventListener('click', () => {
+    coords.pts = coords.orig.map((p) => ({ x: p.x, y: p.y }));
+    coordsSetDirty(false);
+    coordsSync();
+  });
+  window.addEventListener('resize', coordsDraw);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) coordsLedOff(); });
+  document.addEventListener('gt-tab', async (e) => {
+    if (e.detail === 'coords') {
+      if (!coords.dirty) await coordsLoad(); else coordsSync();
+      coordsLedLight();
+    } else {
+      coordsLedOff();
+    }
+  });
+}
+
 // ---------- вкладки ----------
 function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
@@ -360,9 +640,10 @@ function init() {
   initControl();
   initEffects();
   initScenes();
+  initCoords();
   refresh();
   setInterval(refresh, 2000);
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, debounced, describeError, fitBytes };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };

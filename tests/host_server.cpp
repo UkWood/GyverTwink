@@ -30,12 +30,16 @@ int main(int argc, char** argv) {
     fakeMillis() = 100000 + (uint32_t)ms;   // настоящее время для "антидребезга" и таймеров
     parsing();
     webTick();
-    char st[320];
+    int lit = -1;   // номер горящего светодиода (подсветка в редакторе координат)
+    for (int i = 0; i < LED_MAX && lit < 0; i++) {
+      if (leds[i].r || leds[i].g || leds[i].b) lit = i;
+    }
+    char st[360];
     std::snprintf(st, sizeof(st),
                   "STATE bright=%d curEff=%d ledAm=%d maxMa=%d power=%d auto=%d rnd=%d period=%d offOn=%d offMin=%d force=%d forceEff=%d "
-                  "fav=%d scale=%d speed=%d",
+                  "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d",
                   cfg.bright, curEff, cfg.ledAm, pwr.maxMa, cfg.power, cfg.autoCh, cfg.rndCh, cfg.prdCh, cfg.turnOff, cfg.offTmr,
-                  forceTmr.state(), forceEff, effs[forceEff].fav, effs[forceEff].scale, effs[forceEff].speed);
+                  forceTmr.state(), forceEff, effs[forceEff].fav, effs[forceEff].scale, effs[forceEff].speed, calibF, lit, mm.w, mm.h);
     if (last != st) {
       last = st;
       std::printf("%s\n", st);

@@ -162,21 +162,8 @@ void handlePacket() {
           calibF = false;
           strip->clearLedData();
           strip->showLeds(0);
-          EExy.updateNow();
-
-          mm.minY = 255;
-          mm.maxY = 0;
-          mm.minX = 255;
-          mm.maxX = 0;
-          for (int i = 0; i < cfg.ledAm; i++) {
-            mm.minX = min(mm.minX, xy[i][0]);
-            mm.maxX = max(mm.maxX, xy[i][0]);
-            mm.minY = min(mm.minY, xy[i][1]);
-            mm.maxY = max(mm.maxY, xy[i][1]);
-          }
-          mm.w = mm.maxX - mm.minX;
-          mm.h = mm.maxY - mm.minY;
-          EEmm.updateNow();
+          recalcBounds();
+          coordsSave();
           break;
       }
       break;

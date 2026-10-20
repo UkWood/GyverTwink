@@ -133,6 +133,7 @@ struct WiFiUDP {
 // ---- Arduino String (минимум) ----
 struct String : std::string {
   String() {}
+  void reserve(size_t n) { std::string::reserve(n); }
   String(const char* s) : std::string(s ? s : "") {}
   String(const std::string& s) : std::string(s) {}
   String(int v) : std::string(std::to_string(v)) {}

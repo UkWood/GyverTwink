@@ -18,6 +18,7 @@ static void resetAll() {
   udp.in.clear();
   udp.out.clear();
   forceTmr = Timer(30000, false);
+  hlTmr = Timer(60000, false);
   switchTmr = Timer(0, false);
   offTmr = Timer(60000, false);
   calibF = false;
@@ -435,5 +436,6 @@ TEST(effects_respect_led_amount_and_limit) {
 
 #include "test_web_cases.h"
 #include "test_scene_cases.h"
+#include "test_coords_cases.h"
 
 int main() { return runAllTests(); }

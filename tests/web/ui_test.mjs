@@ -254,6 +254,93 @@ try {
   await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_scenes.png'), fullPage: true });
   jsErrors.length = 0;
 
+
+  console.log('вкладка «Координаты»');
+  const api = async (method, p, body, q = '') => {
+    const r = await fetch(base + p + q, { method, headers: { 'X-Requested-With': 'GyverTwink', 'Content-Type': 'text/plain' }, body });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  };
+  const N = 120;
+  const ring = (i) => [Math.round(128 + 100 * Math.cos((i / N) * 2 * Math.PI)), Math.round(128 + 100 * Math.sin((i / N) * 2 * Math.PI))];
+  const hex2 = (v) => v.toString(16).padStart(2, '0');
+  await page.click('[data-tab=control]');
+  await setNumber('#ledAm', N);   // сервер перезапускался: число светодиодов снова по умолчанию
+  check(await stateIs('ledAm', N), 'подготовка: ' + N + ' светодиодов');
+  await page.click('[data-tab=coords]');
+  check(await until(async () => await page.isVisible('#cEmpty')), 'координаты не заданы: подсказка про калибровку');
+  await page.click('[data-tab=control]');
+  check(await stateIs('calib', 0), 'ушли с вкладки: подсветка выключена');
+
+  let hex = '';
+  for (let i = 0; i < N; i++) { const [x, y] = ring(i); hex += hex2(x) + hex2(y); }
+  const outlier = hex.slice(0, 60 * 4) + hex2(5) + hex2(5) + hex.slice(61 * 4);   // 61-й светодиод улетел в угол
+  let r = await api('POST', '/api/xy', outlier, '?n=' + N);
+  check(r.status === 200 && r.json.w > 100, 'координаты загружены на гирлянду (w=' + r.json.w + ')');
+  await page.click('[data-tab=coords]');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('Светодиодов: 120, подозрительных: 1')), 'найдена одна подозрительная точка');
+  check(await page.isHidden('#cEmpty'), 'подсказка про калибровку скрыта');
+  check(await until(() => state.calib === 1 && state.lit === 0), 'первый светодиод горит на гирлянде');
+  await page.click('#cNext');
+  check(await until(() => state.lit === 1), 'кнопка ▶: горит второй светодиод');
+  check((await page.$eval('#cIdx', (e) => e.value)) === '2', 'номер в поле (с единицы)');
+  await page.click('#cPrev');
+  await page.click('#cPrev');
+  check(await until(() => state.lit === 119), 'кнопка ◀ с первого переходит на последний (по кругу)');
+  await page.fill('#cIdx', '61');
+  await page.dispatchEvent('#cIdx', 'change');
+  check(await until(() => state.lit === 60), 'ввод номера 61: горит светодиод 60 (счёт с нуля в протоколе)');
+  check((await page.$eval('#cX', (e) => e.value)) === '5' && (await page.$eval('#cY', (e) => e.value)) === '5', 'его координаты 5, 5');
+
+  // перетаскивание точки мышью
+  const where = () => page.evaluate(() => { const q = toScreen(coords.pts[coords.sel], coords.view); const b = document.getElementById('cCanvas').getBoundingClientRect(); return { x: b.left + q.x, y: b.top + q.y }; });
+  let pt = await where();
+  await page.mouse.move(pt.x, pt.y);
+  await page.mouse.down();
+  await page.mouse.move(pt.x + 60, pt.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const dragged = [Number(await page.$eval('#cX', (e) => e.value)), Number(await page.$eval('#cY', (e) => e.value))];
+  check(dragged[0] > 5 && dragged[1] > 5, 'перетаскивание меняет координаты (' + dragged.join(', ') + ')');
+  check(!(await page.$eval('#cSave', (e) => e.disabled)), 'кнопка «Сохранить» стала активной');
+  check((await page.textContent('#cInfo')).includes('несохранённые'), 'в сводке: есть несохранённые изменения');
+
+  // отмена
+  await page.click('#cUndo');
+  check((await page.$eval('#cX', (e) => e.value)) === '5', 'отмена вернула исходное значение');
+  check(await page.$eval('#cSave', (e) => e.disabled), 'после отмены сохранять нечего');
+
+  // точное исправление числами и сохранение
+  const [rx, ry] = ring(60);
+  await page.fill('#cX', String(rx));
+  await page.dispatchEvent('#cX', 'change');
+  await page.fill('#cY', String(ry));
+  await page.dispatchEvent('#cY', 'change');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('подозрительных: 0')), 'после исправления подозрительных точек нет');
+  await page.click('#cSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'сохранение подтверждено');
+  check(await page.$eval('#cSave', (e) => e.disabled), 'после сохранения кнопка снова неактивна');
+  r = await api('GET', '/api/xy');
+  check(r.json.xy.slice(60 * 4, 61 * 4) === hex2(rx) + hex2(ry), 'на гирлянде новые координаты точки');
+  check(r.json.xy.slice(0, 60 * 4) === hex.slice(0, 60 * 4) && r.json.xy.slice(61 * 4) === hex.slice(61 * 4), 'остальные точки не тронуты');
+  check(await stateIs('mmw', r.json.w) && state.mmh === r.json.h && state.mmw > 150, 'границы карты пересчитаны (' + state.mmw + ' x ' + state.mmh + ')');
+
+  // число светодиодов изменили, пока страница редактировала точки
+  await page.fill('#cX', '33');
+  await page.dispatchEvent('#cX', 'change');
+  await udpSend([2, 0, 1, 10]);   // 110 светодиодов по UDP
+  await until(() => state.ledAm === 110);
+  await page.click('#cSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('Число светодиодов изменилось')), 'число светодиодов изменилось: сохранение отклонено с понятным сообщением');
+  await udpSend([2, 0, 1, 20]);   // вернуть 120
+  await until(() => state.ledAm === 120);
+  await page.click('[data-tab=control]');
+  check(await stateIs('calib', 0), 'ушли с вкладки: подсветка выключена');
+  check(await fitsScreen(), 'вкладка «Управление» по ширине помещается');
+  await page.click('[data-tab=coords]');
+  check(await fitsScreen(), 'вкладка «Координаты» помещается по ширине экрана 390 px');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_coords.png'), fullPage: true });
+  await page.click('[data-tab=control]');
+  jsErrors.length = 0;
+
   for (const tab of ['control', 'effects', 'scenes']) {
     await page.click('[data-tab=' + tab + ']');
     check(await fitsScreen(), 'вкладка «' + tab + '» помещается по ширине экрана 390 px');
