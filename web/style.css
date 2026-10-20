@@ -1,0 +1,134 @@
+:root {
+  --bg: #12151c;
+  --card: #1b2030;
+  --line: #2b3247;
+  --text: #e8ecf5;
+  --muted: #8d96ad;
+  --accent: #ffb020;
+  --accent-text: #1a1300;
+  --ok: #3ccf7a;
+  --bad: #ff5d5d;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f4f9;
+    --card: #ffffff;
+    --line: #d8deea;
+    --text: #1b2030;
+    --muted: #5b647c;
+    --accent: #e08f00;
+    --accent-text: #ffffff;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+h1 { font-size: 20px; margin: 0; }
+#conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+#conn::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+#conn.ok::before { background: var(--ok); }
+#conn.bad::before { background: var(--bad); }
+nav {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  max-width: 560px;
+  margin: 0 auto;
+  overflow-x: auto;
+}
+nav button {
+  flex: 1 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+nav button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+main { max-width: 560px; margin: 0 auto; padding: 4px 16px 32px; }
+.tab { display: none; }
+.tab.active { display: block; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 10px 0;
+}
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.row + .row { border-top: 1px solid var(--line); }
+.row label { flex: 1 1 40%; }
+.row .val { min-width: 3ch; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type=range] { flex: 1 1 40%; min-width: 120px; accent-color: var(--accent); height: 32px; }
+input[type=number], input[type=text] {
+  width: 110px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
+button.btn {
+  min-height: 46px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+}
+button.btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+button.btn.block { width: 100%; }
+#power { width: 100%; min-height: 64px; font-size: 20px; }
+#power.off { background: transparent; color: var(--text); border: 2px solid var(--line); }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+#effList { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#effList button {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+#effList button.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+#effList button.cur::after { content: " ▶"; color: var(--accent); }
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  background: var(--bad);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  max-width: 90vw;
+  display: none;
+}
+#toast.show { display: block; }
+footer { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 16px 24px; }
+#effName { text-transform: none; }

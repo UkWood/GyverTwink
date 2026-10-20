@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GyverTwink</title>
+<style>
+/*@style.css*/
+</style>
+</head>
+<body>
+<header>
+  <h1>GyverTwink</h1>
+  <span id="conn">нет связи</span>
+</header>
+<nav id="tabs">
+  <button data-tab="control" class="active">Управление</button>
+  <button data-tab="effects">Эффекты</button>
+</nav>
+<main>
+  <section class="tab active" id="tab-control">
+    <div class="card">
+      <button id="power" class="btn off">Выключено</button>
+    </div>
+    <div class="card">
+      <h2>Яркость и эффекты</h2>
+      <div class="row"><label for="bright">Яркость</label><input id="bright" type="range" min="0" max="255"><span class="val" id="bright-val"></span></div>
+      <div class="row"><label>Сейчас: <span id="cur"></span></label><button id="next" class="btn secondary">Следующий</button></div>
+      <div class="row"><label for="auto">Автосмена эффектов</label><input id="auto" type="checkbox"></div>
+      <div class="row"><label for="rnd">Случайный порядок</label><input id="rnd" type="checkbox"></div>
+      <div class="row"><label for="period">Период смены, мин</label><input id="period" type="range" min="1" max="10"><span class="val" id="period-val"></span></div>
+    </div>
+    <div class="card">
+      <h2>Таймер выключения</h2>
+      <div class="row"><label for="offOn">Выключить через</label><input id="offOn" type="checkbox"></div>
+      <div class="row"><label for="offMin">Минут</label><input id="offMin" type="number" min="1" max="250" inputmode="numeric"></div>
+    </div>
+    <div class="card">
+      <h2>Лента</h2>
+      <div class="row"><label for="ledAm">Количество светодиодов</label><input id="ledAm" type="number" min="1" inputmode="numeric"></div>
+      <div class="row"><label for="maxMa">Лимит тока, мА</label><input id="maxMa" type="number" min="0" max="25500" step="100" inputmode="numeric"></div>
+      <p class="hint">Лимит 0 — без ограничения. Ставь около 80% от тока блока питания.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-effects">
+    <div class="card">
+      <h2>Эффект</h2>
+      <ul id="effList"></ul>
+    </div>
+    <div class="card" id="effEditor" hidden>
+      <h2 id="effName"></h2>
+      <div class="row"><label for="effFav">В избранном (участвует в автосмене)</label><input id="effFav" type="checkbox"></div>
+      <div class="row"><label for="effScale">Масштаб</label><input id="effScale" type="range" min="0" max="255"><span class="val" id="effScale-val"></span></div>
+      <div class="row"><label for="effSpeed">Скорость</label><input id="effSpeed" type="range" min="0" max="255"><span class="val" id="effSpeed-val"></span></div>
+      <p class="hint">Выбранный эффект показывается 30 секунд, потом лента вернётся к обычной смене.</p>
+    </div>
+  </section>
+</main>
+<footer id="foot"></footer>
+<div id="toast" role="alert"></div>
+<script>
+//@app.js
+</script>
+</body>
+</html>

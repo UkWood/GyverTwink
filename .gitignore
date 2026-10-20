@@ -1,3 +1,6 @@
 .pio/
 .vscode/
 tests/test_firmware
+tests/gt_host
+tests/web/node_modules/
+tests/web/package-lock.json

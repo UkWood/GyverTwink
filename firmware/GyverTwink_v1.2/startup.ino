@@ -41,7 +41,6 @@ void setupAP(bool customPass) {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(GT_AP_SSID, (customPass && strlen(portalCfg.pass) >= 8) ? portalCfg.pass : GT_AP_PASS);
   myIP = WiFi.softAPIP();
-  server.begin();
   fadeBlink(CRGB::Magenta);
 }
 

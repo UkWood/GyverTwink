@@ -1,0 +1,8 @@
+{
+  "name": "gyvertwink-web-tests",
+  "private": true,
+  "description": "e2e-тесты веб-интерфейса (настоящий Chromium + настоящий код прошивки на ПК)",
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

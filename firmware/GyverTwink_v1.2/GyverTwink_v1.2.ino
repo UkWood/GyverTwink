@@ -28,6 +28,8 @@
 #define LED_ORDER GRB   // порядок цветов ленты
 #define LED_MAX 500     // макс. светодиодов
 
+#define FW_VERSION "1.3-dev"   // версия прошивки (показывается в веб-интерфейсе)
+
 // ограничение тока ленты: яркость автоматически снижается, чтобы не перегрузить блок питания
 #define POWER_LIMIT_MA 0  // лимит по умолчанию в мА, 0 - выключен (меняется из приложения/по UDP)
 #define POWER_VOLTS 5     // напряжение питания ленты
@@ -42,6 +44,8 @@
 // ================== LIBS ==================
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
 #include <SimplePortal.h>
 #include <FastLED.h>
 #include <EEManager.h>
@@ -49,9 +53,10 @@
 #include "palettes.h"
 #include "Timer.h"
 #include "types.h"
+#include "web_page.h"
 
 // ================== OBJECTS ==================
-WiFiServer server(80);
+ESP8266WebServer webServer(80);
 WiFiUDP udp;
 EEManager EEwifi(portalCfg);
 CRGB leds[LED_MAX];
@@ -126,6 +131,7 @@ void setup() {
   cfg.turnOff = false;
   strip->setLeds(leds, cfg.ledAm);
   udp.begin(8888);
+  webBegin();   // веб-интерфейс и mDNS (gyvertwink.local)
 }
 
 // ================== LOOP ==================
@@ -138,6 +144,7 @@ void loop() {
   EEpwr.tick();
 
   parsing();  // парсим udp
+  webTick();  // веб-интерфейс
 
   // таймер принудительного показа эффектов
   if (forceTmr.ready()) {
