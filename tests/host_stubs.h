@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <functional>
 #include <map>
+#include <memory>
 #include <netinet/in.h>
 #include <string>
 #include <sys/socket.h>
@@ -140,6 +141,113 @@ struct String : std::string {
 typedef const char* PGM_P;
 #define PROGMEM
 #define FW_VERSION_HOST "host"
+
+// ---- LittleFS: файлы в памяти; если задана переменная GT_FS_DIR - ещё и на диске (чтобы пережить перезапуск хост-сервера) ----
+class File {
+public:
+  File() {}
+  File(std::string* data, bool write, std::function<void()> commit) : _d(data), _w(write), _commit(commit) {}
+  operator bool() const { return _d != nullptr; }
+  size_t size() const { return _d ? _d->size() : 0; }
+  size_t read(uint8_t* b, size_t n) {
+    if (!_d || _w) return 0;
+    size_t k = std::min(n, _d->size() - _pos);
+    memcpy(b, _d->data() + _pos, k);
+    _pos += k;
+    return k;
+  }
+  size_t write(const uint8_t* b, size_t n) {
+    if (!_d || !_w || *_fail) return 0;
+    _d->append((const char*)b, n);
+    return n;
+  }
+  void close() {
+    if (_d && _w && _commit) _commit();
+    _d = nullptr;
+  }
+  bool* _fail = &_never;
+private:
+  std::string* _d = nullptr;
+  bool _w = false;
+  size_t _pos = 0;
+  std::function<void()> _commit;
+  bool _never = false;
+};
+
+struct LittleFSClass {
+  std::map<std::string, std::string> files;
+  bool failWrites = false;   // тест: ошибка записи
+  bool begun = false;
+  std::string dir() const { return getenv("GT_FS_DIR") ? getenv("GT_FS_DIR") : ""; }
+  static std::string disk(const std::string& d, const std::string& path) {
+    std::string n = path;
+    for (auto& c : n) if (c == '/') c = '_';
+    return d + "/" + n;
+  }
+  bool begin() {
+    begun = true;
+    std::string d = dir();
+    if (!d.empty()) {
+      for (const char* p : {"/scenes.bin"}) {
+        FILE* f = fopen(disk(d, p).c_str(), "rb");
+        if (!f) continue;
+        std::string s;
+        char buf[512];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) s.append(buf, n);
+        fclose(f);
+        files[p] = s;
+      }
+    }
+    return true;
+  }
+  void sync(const std::string& path) {
+    std::string d = dir();
+    if (d.empty()) return;
+    std::string n = disk(d, path);
+    if (!files.count(path)) {
+      ::remove(n.c_str());   // файл на диске (не метод класса)
+      return;
+    }
+    FILE* f = fopen(n.c_str(), "wb");
+    if (!f) return;
+    fwrite(files[path].data(), 1, files[path].size(), f);
+    fclose(f);
+  }
+  bool exists(const char* path) { return files.count(path) > 0; }
+  File open(const char* path, const char* mode) {
+    std::string p = path;
+    if (mode[0] == 'r') {
+      if (!files.count(p)) return File();
+      return File(&files[p], false, nullptr);
+    }
+    // запись идёт во временную строку, в файл попадает при close() (как атомарная запись)
+    auto buf = std::make_shared<std::string>();
+    File f(buf.get(), true, [this, p, buf]() {
+      files[p] = *buf;
+      sync(p);
+    });
+    _keep.push_back(buf);
+    f._fail = &failWrites;
+    return f;
+  }
+  bool remove(const char* path) {
+    bool had = files.erase(path) > 0;
+    sync(path);
+    return had;
+  }
+  bool rename(const char* from, const char* to) {
+    if (!files.count(from)) return false;
+    files[to] = files[from];
+    files.erase(from);
+    sync(from);
+    sync(to);
+    return true;
+  }
+private:
+  std::vector<std::shared_ptr<std::string>> _keep;
+};
+inline LittleFSClass LittleFS;
 
 // ---- ESP ----
 struct EspClass {

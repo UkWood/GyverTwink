@@ -130,5 +130,13 @@ button.btn.block { width: 100%; }
   display: none;
 }
 #toast.show { display: block; }
+#toast.good { background: var(--ok); color: #05210f; }
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 16px 24px; }
 #effName { text-transform: none; }
+#sceneList { list-style: none; margin: 0; padding: 0; }
+#sceneList li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
+#sceneList li + li { border-top: 1px solid var(--line); }
+#sceneList .name { flex: 1 1 100%; overflow-wrap: anywhere; font-weight: 600; }
+#sceneList button { flex: 1 1 auto; min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+#sceneList button.apply { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+#sceneName { flex: 1 1 auto; width: auto; min-width: 0; }

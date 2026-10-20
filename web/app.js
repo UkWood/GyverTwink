@@ -54,9 +54,10 @@ const api = {
 };
 
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, good) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.toggle('good', !!good);
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
@@ -238,6 +239,108 @@ function initEffects() {
   }
 }
 
+// ---------- вкладка «Сцены» ----------
+let sceneData = { max: 8, scenes: [] };
+const SCENE_NAME_BYTES = 16;   // как в прошивке: в UTF-8 русская буква занимает 2 байта
+
+// обрезать строку до n байт UTF-8 по границе символа
+function fitBytes(str, n) {
+  const enc = new TextEncoder();
+  let out = '';
+  let used = 0;
+  for (const ch of str) {
+    const len = enc.encode(ch).length;
+    if (used + len > n) break;
+    out += ch;
+    used += len;
+  }
+  return out;
+}
+
+function renderScenes() {
+  const list = $('sceneList');
+  list.textContent = '';
+  for (const s of sceneData.scenes) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = s.name;
+    const apply = document.createElement('button');
+    apply.className = 'apply';
+    apply.textContent = 'Применить';
+    apply.dataset.act = 'load';
+    apply.addEventListener('click', () => sceneLoad(s));
+    const over = document.createElement('button');
+    over.textContent = 'Перезаписать';
+    over.dataset.act = 'overwrite';
+    over.addEventListener('click', () => sceneSave(s.i, s.name));
+    const del = document.createElement('button');
+    del.textContent = 'Удалить';
+    del.dataset.act = 'delete';
+    del.addEventListener('click', () => sceneDelete(s));
+    li.append(name, apply, over, del);
+    list.appendChild(li);
+  }
+  $('sceneEmpty').hidden = sceneData.scenes.length > 0;
+}
+
+async function loadScenes() {
+  try {
+    sceneData = await api.get('/api/scenes');
+    renderScenes();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function sceneSave(slot, name) {
+  try {
+    sceneData = await api.post('/api/scenes/save', { slot, name });
+    renderScenes();
+    toast('Сохранено: ' + name, true);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function sceneLoad(s) {
+  try {
+    st = await api.post('/api/scenes/load', { slot: s.i });
+    render(true);
+    toast('Применена сцена «' + s.name + '»', true);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function sceneDelete(s) {
+  if (!confirm('Удалить сцену «' + s.name + '»?')) return;
+  try {
+    sceneData = await api.post('/api/scenes/delete', { slot: s.i });
+    renderScenes();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function initScenes() {
+  const input = $('sceneName');
+  input.addEventListener('input', () => {
+    const fit = fitBytes(input.value, SCENE_NAME_BYTES);
+    if (fit !== input.value) input.value = fit;
+  });
+  $('sceneSave').addEventListener('click', () => {
+    const name = input.value.trim();
+    if (!name) { toast('Введите название сцены'); return; }
+    const used = new Set(sceneData.scenes.map((s) => s.i));
+    let slot = -1;
+    for (let i = 0; i < sceneData.max; i++) if (!used.has(i)) { slot = i; break; }
+    if (slot < 0) { toast('Нет свободных мест: удалите ненужную сцену'); return; }
+    sceneSave(slot, name).then(() => { input.value = ''; });
+  });
+  document.addEventListener('gt-tab', (e) => { if (e.detail === 'scenes') loadScenes(); });
+}
+
 // ---------- вкладки ----------
 function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
@@ -256,9 +359,10 @@ function init() {
   initTabs();
   initControl();
   initEffects();
+  initScenes();
   refresh();
   setInterval(refresh, 2000);
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, debounced, describeError };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, debounced, describeError, fitBytes };
