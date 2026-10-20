@@ -510,6 +510,14 @@ struct CLEDController {
   CRGB* data = nullptr;
   int count = 0;
   std::vector<int> shown;   // яркость каждого вызова showLeds
+  // запись кадров (для тестов расписания): когда, с какой яркостью и какие светодиоды горели
+  struct Frame {
+    uint32_t t;
+    int bri;
+    std::vector<int> lit;
+  };
+  bool record = false;
+  std::vector<Frame> frames;
   void setLeds(CRGB* l, int n) {
     data = l;
     count = n;
@@ -517,7 +525,15 @@ struct CLEDController {
   void clearLedData() {
     for (int i = 0; i < count; i++) data[i] = CRGB();
   }
-  void showLeds(uint8_t bri = 255) { shown.push_back(bri); }
+  void showLeds(uint8_t bri = 255) {
+    shown.push_back(bri);
+    if (!record) return;
+    Frame f{fakeMillis(), bri, {}};
+    for (int i = 0; i < count; i++) {
+      if (data[i].r || data[i].g || data[i].b) f.lit.push_back(i);
+    }
+    frames.push_back(f);
+  }
 };
 
 struct CRGBPalette16 {};

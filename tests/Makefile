@@ -10,7 +10,7 @@ test: test_firmware
 stand: gt_host
 	python3 protocol_stand.py ./gt_host
 
-test_firmware: test_firmware.cpp test_web_cases.h test_scene_cases.h test_coords_cases.h minitest.h $(DEPS)
+test_firmware: test_firmware.cpp test_web_cases.h test_scene_cases.h test_coords_cases.h test_vcalib_cases.h minitest.h $(DEPS)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 gt_host: host_server.cpp $(DEPS)

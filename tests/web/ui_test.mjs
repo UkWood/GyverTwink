@@ -341,6 +341,84 @@ try {
   await page.click('[data-tab=control]');
   jsErrors.length = 0;
 
+
+  console.log('вкладка «Калибровка» (по видео)');
+  {
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gt-video-'));
+    // ledAm = 120 и координаты - кольцо (см. выше). Серию запускаем из интерфейса, но видео синтезируем сами по параметрам из прошивки
+    await page.click('[data-tab=vcalib]');
+    check(await until(async () => (await page.textContent('#vEstimate')).includes('Светодиодов: 120')), 'оценка длительности серии показана');
+    await page.fill('#vDelay', '2');
+    await page.fill('#vStep', '120');
+    await page.click('#vStart');
+    check(await until(() => state.calib === 1), 'серия запущена: эффекты на гирлянде отключены');
+    check(await until(async () => (await page.textContent('#vStatus')).includes('Включай запись')), 'пока идёт пауза до начала, подсказка про запись');
+    check(await page.isDisabled('#vStart') && !(await page.isDisabled('#vStop')), 'кнопка старта заблокирована, остановки доступна');
+    check(await until(async () => (await page.textContent('#vStatus')).includes('Вспышка') || (await page.textContent('#vStatus')).includes('тёмная пауза'), 6000), 'статус сменился на «вспышка/тёмная пауза»');
+    await page.click('#vStop');
+    check(await stateIs('calib', 0), 'остановка вернула эффекты');
+    check(await until(async () => !(await page.isDisabled('#vStart'))), 'кнопка старта снова доступна');
+
+    const p = (await (await fetch(base + '/api/vcalib')).json());
+    const cell = 320 / 60;
+    const pxOf = (g) => [(g[0] + 0.5) * cell, (g[1] + 0.5) * cell];
+    // положения для «съёмки»: кольцо в пределах кадра 60 x 106 клеток (ring() выше - для редактора, сетка 0..255)
+    const truth = Array.from({ length: p.n }, (_, i) => [Math.round(30 + 25 * Math.cos((i / p.n) * 2 * Math.PI)), Math.round(40 + 25 * Math.sin((i / p.n) * 2 * Math.PI))]);
+    const mkVideo = async (name, extra) => {
+      const spec = { w: 320, h: 568, fps: 30, t0: 1.1, seed: 5, params: { n: p.n, step: 120, flash: p.flash, gap: p.gap, dark: p.dark, marker: p.marker, delay: 2 }, points: truth.map(pxOf), hidden: [], ...extra };
+      const sp = path.join(tmp, name + '.json');
+      const out = path.join(tmp, name + '.webm');
+      fs.writeFileSync(sp, JSON.stringify(spec));
+      await new Promise((resolve, reject) => {
+        const c = spawn('python3', [path.join(here, 'make_calib_video.py'), sp, out], { stdio: 'inherit' });
+        c.on('exit', (code) => (code ? reject(new Error('генератор видео: ' + code)) : resolve()));
+      });
+      return out;
+    };
+
+    // 1) нет вспышки на видео - понятная ошибка
+    const dark = await mkVideo('dark', { no_leds: true, params: { n: p.n, step: 120, flash: p.flash, gap: p.gap, dark: p.dark, marker: p.marker, delay: 0 } });
+    await page.setInputFiles('#vFile', dark);
+    await page.click('#vAnalyze');
+    check(await until(async () => /Не найдена вспышка|неразличима/.test(await page.textContent('#vResult')), 180000), 'видео без вспышки: сообщение про маркер');
+    check(await until(async () => !(await page.isDisabled('#vAnalyze')), 10000), 'после ошибки можно выбрать другое видео');
+
+    // 2) нормальное видео: часть светодиодов вне кадра
+    const hidden = [0, 1, 2, 3, 4, 60];
+    const good = await mkVideo('good', { hidden });
+    await page.setInputFiles('#vFile', good);
+    await page.click('#vAnalyze');
+    check(await until(async () => (await page.textContent('#vBar2')) !== null && (await page.$eval('#vBar2', (e) => parseInt(e.style.width) || 0)) > 10, 60000), 'идёт разбор: полоса прогресса двигается');
+    check(await until(async () => (await page.$eval('#tab-coords', (e) => e.classList.contains('active'))), 240000), 'разбор закончен: открылась вкладка «Координаты»');
+    check((await page.textContent('#cInfo')).includes('несохранённые'), 'результат лежит в редакторе как несохранённая правка');
+    const infoText = await page.textContent('#cInfo');
+    check(infoText.includes('оценено по соседям: ' + hidden.length), 'светодиоды вне кадра помечены как оценённые (' + hidden.length + '); в сводке: «' + infoText + '»');
+    const got = await page.evaluate(() => coords.pts.map((q) => [q.x, q.y]));
+    const bad = [];
+    got.forEach((q, i) => { if (!hidden.includes(i) && (Math.abs(q[0] - truth[i][0]) > 1 || Math.abs(q[1] - truth[i][1]) > 1)) bad.push(i); });
+    check(bad.length === 0, 'найденные светодиоды совпадают с настоящими с точностью до клетки сетки' + (bad.length ? ' (расхождения: ' + bad.slice(0, 10).join(',') + ')' : ''));
+    check(Math.abs(got[60][0] - truth[60][0]) <= 3 && Math.abs(got[60][1] - truth[60][1]) <= 3, 'оценка спрятанного светодиода внутри цепочки близка к настоящему положению');
+    await page.click('#cSave');
+    check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'результат сохранён на гирлянду');
+    const saved = (await (await fetch(base + '/api/xy')).json()).xy;
+    const dev = Array.from({ length: p.n }, (_, i) => [parseInt(saved.substr(i * 4, 2), 16), parseInt(saved.substr(i * 4 + 2, 2), 16)]);
+    check(dev.every((q, i) => q[0] === got[i][0] && q[1] === got[i][1]), 'на гирлянде ровно те координаты, что показал редактор');
+    check(await page.$eval('#vFile', (e) => e.files.length) === 1, 'файл остался выбранным');
+
+    // 3) отмена разбора
+    await page.click('[data-tab=vcalib]');
+    await page.click('#vAnalyze');
+    await until(async () => (await page.$eval('#vBar2', (e) => parseInt(e.style.width) || 0)) > 3, 60000);
+    await page.click('#vCancel');
+    check(await until(async () => (await page.textContent('#vResult')).includes('Прервано'), 60000), 'отмена прерывает разбор');
+    check(await fitsScreen(), 'вкладка «Калибровка» помещается по ширине экрана 390 px');
+    await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_vcalib.png'), fullPage: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
+    await page.click('[data-tab=control]');
+    jsErrors.length = 0;
+  }
+
   for (const tab of ['control', 'effects', 'scenes']) {
     await page.click('[data-tab=' + tab + ']');
     check(await fitsScreen(), 'вкладка «' + tab + '» помещается по ширине экрана 390 px');

@@ -43,6 +43,7 @@ byte forceEff = 0;
 #include "../firmware/GyverTwink_v1.2/settings.ino"
 #include "../firmware/GyverTwink_v1.2/scenes.ino"
 #include "../firmware/GyverTwink_v1.2/coords.ino"
+#include "../firmware/GyverTwink_v1.2/vcalib.ino"
 #include "../firmware/GyverTwink_v1.2/effects.ino"
 #include "../firmware/GyverTwink_v1.2/parsing.ino"
 #include "../firmware/GyverTwink_v1.2/web.ino"

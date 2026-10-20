@@ -16,7 +16,7 @@ WEB = os.path.join(ROOT, "web")
 OUT = os.path.join(ROOT, "firmware", "GyverTwink_v1.2", "web_page.h")
 
 # какие файлы подставляются в index.html: маркер -> имя файла
-INLINE = {"/*@style.css*/": "style.css", "//@app.js": "app.js"}
+INLINE = {"/*@style.css*/": "style.css", "//@calib.js": "calib.js", "//@app.js": "app.js"}
 
 
 def read(name):
@@ -30,8 +30,9 @@ def build_html():
         if marker not in html:
             sys.exit("в index.html нет маркера " + marker)
         html = html.replace(marker, read(fname).replace("\r\n", "\n"))
-    if "</script>" in read("app.js"):
-        sys.exit("app.js не должен содержать </script>")
+    for js in ("app.js", "calib.js"):
+        if "</script>" in read(js):
+            sys.exit(js + " не должен содержать </script>")
     return html.replace("\r\n", "\n")
 
 

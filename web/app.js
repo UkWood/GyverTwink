@@ -426,7 +426,7 @@ function suspiciousPoints(pts, k) {
 }
 
 // ---------- вкладка «Координаты» ----------
-const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [] };
+const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set() };
 
 function coordsSetDirty(d) {
   coords.dirty = d;
@@ -486,6 +486,16 @@ function coordsDraw() {
     g.fill();
   });
   g.lineWidth = 2;
+  g.strokeStyle = '#ff9f1a';   // оценённые по соседям (светодиод не нашли на видео): пунктирное кольцо
+  g.setLineDash([3, 3]);
+  for (const i of coords.est) {
+    if (!pts[i]) continue;
+    const q = toScreen(pts[i], v);
+    g.beginPath();
+    g.arc(q.x, q.y, r + 5, 0, 7);
+    g.stroke();
+  }
+  g.setLineDash([]);
   g.strokeStyle = '#ff4d4d';
   for (const i of coords.sus) {
     const q = toScreen(pts[i], v);
@@ -512,7 +522,8 @@ function coordsRefreshInfo() {
   const n = coords.pts.length;
   const empty = n > 0 && coords.pts.every((p) => p.x === coords.pts[0].x && p.y === coords.pts[0].y);
   $('cEmpty').hidden = !empty;
-  $('cInfo').textContent = 'Светодиодов: ' + n + ', подозрительных: ' + coords.sus.length + (coords.dirty ? ' · есть несохранённые изменения' : '');
+  $('cInfo').textContent = 'Светодиодов: ' + n + ', подозрительных: ' + coords.sus.length +
+    (coords.est.size ? ', оценено по соседям: ' + coords.est.size : '') + (coords.dirty ? ' · есть несохранённые изменения' : '');
 }
 
 function coordsSync() {
@@ -541,6 +552,7 @@ async function coordsLoad() {
     coords.pts = hexToPoints(d.xy);
     coords.orig = coords.pts.map((p) => ({ x: p.x, y: p.y }));
     coords.sel = Math.min(coords.sel, Math.max(0, coords.pts.length - 1));
+    coords.est = new Set();
     coordsSetDirty(false);
     coordsSync();
   } catch (e) {
@@ -562,7 +574,19 @@ async function coordsSave() {
 }
 
 function coordsEdit(i, x, y) {
+  coords.est.delete(i);   // поправленная вручную точка больше не «оценка»
   coords.pts[i] = { x: clamp255(x), y: clamp255(y) };
+  coordsSetDirty(true);
+  coordsSync();
+}
+
+// результат калибровки по видео: точки попадают в редактор как несохранённая правка
+async function coordsApplyResult(pts, est) {
+  await coordsLoad();   // orig - то, что сейчас на гирлянде
+  if (pts.length !== coords.orig.length) throw new Error('Число светодиодов изменилось, повтори калибровку');
+  coords.pts = pts.map((p) => ({ x: p.x, y: p.y }));
+  coords.est = new Set(est);
+  coords.sel = 0;
   coordsSetDirty(true);
   coordsSync();
 }
@@ -606,6 +630,7 @@ function initCoords() {
   $('cSave').addEventListener('click', coordsSave);
   $('cUndo').addEventListener('click', () => {
     coords.pts = coords.orig.map((p) => ({ x: p.x, y: p.y }));
+    coords.est = new Set();
     coordsSetDirty(false);
     coordsSync();
   });
@@ -619,6 +644,205 @@ function initCoords() {
       coordsLedOff();
     }
   });
+}
+
+// ---------- вкладка «Калибровка» (по видео) ----------
+const vc = { st: null, timer: 0, abort: null, analyzing: false };
+
+const PHASE_TEXT = {
+  idle: 'Серия не запущена.',
+  wait: 'Включай запись видео: серия начнётся через',
+  dark: 'Серия начинается: тёмная пауза…',
+  flash: 'Вспышка-маркер (нужна для синхронизации).',
+  gap: 'Пауза перед серией…',
+  seq: 'Идёт серия: светодиод',
+  end: 'Серия закончена, ещё секунду снимай…',
+};
+
+function vcTotalSec(delay, step, n, p) {
+  return delay + (p.dark + p.flash + p.gap + p.end) / 1000 + (n * step) / 1000;
+}
+
+function vcRenderEstimate() {
+  const p = vc.st;
+  if (!p) return;
+  const total = vcTotalSec(Number($('vDelay').value) || 0, Number($('vStep').value) || p.step, p.n, p);
+  $('vEstimate').textContent = 'Светодиодов: ' + p.n + '. Вся серия займёт около ' + Math.round(total) + ' с (видео будет такой же длины).';
+}
+
+function vcRenderStatus() {
+  const p = vc.st;
+  if (!p) return;
+  let text = PHASE_TEXT[p.phase] || '';
+  let frac = 0;
+  if (p.run) {
+    if (p.phase === 'wait') text += ' ' + Math.max(0, Math.ceil((p.delay * 1000 - p.e) / 1000)) + ' с';
+    if (p.phase === 'seq') text += ' ' + (p.i + 1) + ' из ' + p.n;
+    frac = Math.min(1, p.e / p.total);
+  }
+  $('vStatus').textContent = text;
+  $('vBar').style.width = Math.round(frac * 100) + '%';
+  $('vStart').disabled = !!p.run;
+  $('vStop').disabled = !p.run;
+}
+
+async function vcRefresh() {
+  try {
+    vc.st = await api.get('/api/vcalib');
+    if (!vc.stepEdited && !vc.st.run) $('vStep').value = vc.st.step;
+    vcRenderStatus();
+    vcRenderEstimate();
+    clearTimeout(vc.timer);
+    if (vc.st.run || document.getElementById('tab-vcalib').classList.contains('active')) vc.timer = setTimeout(vcRefresh, vc.st.run ? 400 : 2000);
+  } catch (e) {
+    clearTimeout(vc.timer);
+    vc.timer = setTimeout(vcRefresh, 3000);
+  }
+}
+
+// кадр видео в нужный момент: перемотка и копирование в маленький холст (серый).
+// После события seeked браузер может ещё не вывести новый кадр - тогда drawImage рисует прежний (из-за этого
+// терялись отдельные светодиоды). Поэтому ждём показа кадра (requestVideoFrameCallback) и дополнительно
+// перепроверяем: кадр, побитово совпавший с предыдущим при другом времени, считается устаревшим и снимается заново.
+function videoSampler(video, width) {
+  const ratio = video.videoHeight / video.videoWidth;
+  const w = width;
+  const h = Math.max(2, Math.round(width * ratio));
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let last = null;
+  let lastT = -1;
+
+  function grab() {
+    g.drawImage(video, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    const gray = new Float32Array(w * h);
+    for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+    return gray;
+  }
+  const same = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+
+  return async (t) => {
+    const target = Math.max(0, Math.min(video.duration - 0.001, t));
+    if (Math.abs(video.currentTime - target) > 1e-4) {
+      await new Promise((resolve) => {
+        const done = () => { video.removeEventListener('seeked', done); clearTimeout(to); resolve(); };
+        const to = setTimeout(done, 4000);   // некоторые браузеры не присылают seeked
+        video.addEventListener('seeked', done);
+        video.currentTime = target;
+      });
+      if (video.requestVideoFrameCallback) {
+        await new Promise((resolve) => {
+          const to = setTimeout(resolve, 250);
+          video.requestVideoFrameCallback(() => { clearTimeout(to); resolve(); });
+        });
+      } else {
+        await sleep(40);
+      }
+    }
+    let gray = grab();
+    for (let retry = 0; retry < 3 && last && Math.abs(target - lastT) > 0.05 && same(gray, last); retry++) {
+      await sleep(60);   // кадр не обновился: даём браузеру вывести его
+      gray = grab();
+    }
+    last = gray;
+    lastT = target;
+    return { w, h, g: gray };
+  };
+}
+
+async function openVideo(file) {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  await new Promise((resolve, reject) => {
+    video.onloadedmetadata = resolve;
+    video.onerror = () => reject(new Error('Не удалось открыть видео: формат не поддерживается этим браузером'));
+  });
+  if (video.readyState < 2) {   // ждём первый кадр: иначе перемотка в 0 вернёт пустой (чёрный) кадр
+    await new Promise((resolve) => {
+      const to = setTimeout(resolve, 5000);
+      video.onloadeddata = () => { clearTimeout(to); resolve(); };
+    });
+  }
+  if (!isFinite(video.duration)) {   // у некоторых роликов (запись из браузера) длина неизвестна до перемотки в конец
+    await new Promise((resolve) => {
+      video.ontimeupdate = () => { video.ontimeupdate = null; resolve(); };
+      video.currentTime = 1e7;
+    });
+    video.currentTime = 0;
+  }
+  if (!video.videoWidth) throw new Error('В файле нет видео');
+  return { video, url };
+}
+
+async function vcAnalyze() {
+  const file = $('vFile').files[0];
+  if (!file || vc.analyzing) return;
+  const p = vc.st;
+  const step = Number($('vStep').value);
+  if (!p || !(step >= 60 && step <= 1000)) { toast('Укажи шаг серии от 60 до 1000 мс'); return; }
+  vc.analyzing = true;
+  vc.abort = { aborted: false };
+  $('vAnalyze').disabled = true;
+  $('vCancel').hidden = false;
+  $('vResult').textContent = 'Открываю видео…';
+  $('vBar2').style.width = '0%';
+  let opened = null;
+  try {
+    opened = await openVideo(file);
+    const sample = videoSampler(opened.video, 320);
+    const res = await analyzeVideo(sample, opened.video.duration, { n: p.n, step, flash: p.flash, gap: p.gap }, (stage, done, total) => {
+      const base = stage === 'marker' ? 0 : 0.35;
+      const span = stage === 'marker' ? 0.35 : 0.65;
+      $('vBar2').style.width = Math.round((base + span * (done / total)) * 100) + '%';
+      $('vResult').textContent = stage === 'marker' ? 'Ищу вспышку-маркер…' : 'Нахожу светодиоды: ' + done + ' из ' + total;
+    }, vc.abort);
+    const grid = toGridCoords(res.points, res.w);
+    const est = [];
+    res.points.forEach((q, i) => { if (q.est) est.push(i); });
+    $('vBar2').style.width = '100%';
+    $('vResult').textContent = 'Найдено ' + res.found + ' из ' + res.total + ' светодиодов' + (est.length ? ' (остальные оценены по соседям)' : '') + '. Проверь точки и сохрани.';
+    await coordsApplyResult(grid, est);
+    showTab('coords');
+    toast('Видео разобрано: проверь точки и нажми «Сохранить»', true);
+  } catch (e) {
+    $('vResult').textContent = e.message;
+    toast(e.message);
+  } finally {
+    if (opened) { URL.revokeObjectURL(opened.url); opened.video.removeAttribute('src'); opened.video.load(); }
+    vc.analyzing = false;
+    $('vCancel').hidden = true;
+    $('vAnalyze').disabled = !$('vFile').files.length;
+  }
+}
+
+function initVcalib() {
+  $('vStart').addEventListener('click', async () => {
+    try {
+      vc.st = await api.post('/api/vcalib/start', { delay: $('vDelay').value, step: $('vStep').value });
+      vcRenderStatus();
+      vcRefresh();
+    } catch (e) {
+      toast(e.message === 'busy' ? 'Серия уже идёт' : e.message);
+    }
+  });
+  $('vStop').addEventListener('click', async () => {
+    try { vc.st = await api.post('/api/vcalib/stop'); vcRenderStatus(); } catch (e) { toast(e.message); }
+  });
+  for (const id of ['vDelay', 'vStep']) {
+    $(id).addEventListener('input', () => { if (id === 'vStep') vc.stepEdited = true; vcRenderEstimate(); });
+  }
+  $('vFile').addEventListener('change', () => { $('vAnalyze').disabled = !$('vFile').files.length || vc.analyzing; });
+  $('vAnalyze').addEventListener('click', vcAnalyze);
+  $('vCancel').addEventListener('click', () => { if (vc.abort) vc.abort.aborted = true; });
+  document.addEventListener('gt-tab', (e) => { if (e.detail === 'vcalib') vcRefresh(); });
 }
 
 // ---------- вкладки ----------
@@ -641,6 +865,7 @@ function init() {
   initEffects();
   initScenes();
   initCoords();
+  initVcalib();
   refresh();
   setInterval(refresh, 2000);
 }
