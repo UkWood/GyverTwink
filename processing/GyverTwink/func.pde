@@ -26,11 +26,20 @@ void startSearch() {
 
 void requestCfg() {
   parseMode = 1;
-  int[] buf = {1};
-  sendData(buf);
+  // узнаём, поддерживает ли прошивка ACK (ответ {5} включит ackMode)
+  ackReset();
+  sendRaw(new int[] {5});
+  delay(60);   // прошивка отсеивает пакеты чаще 50 мс
+  sendRaw(new int[] {1});
 }
 
 void sendData(int[] data) {
+  // {0} - широковещательный поиск, {5} - запрос возможностей: всегда без ACK
+  if (ackMode && data[0] != 0 && data[0] != 5) ackSend(data);
+  else sendRaw(data);
+}
+
+void sendRaw(int[] data) {
   int[] buf = {'G', 'T'};
   buf = concat(buf, data);
   sendData(byte(buf));
@@ -42,4 +51,9 @@ void sendData(byte[] data) {
     delay(15);
     udp.send(data, curIP, port);
   }
+}
+
+// одиночная отправка (повторами управляет ACK)
+void sendBytesOnce(byte[] data) {
+  if (curIP.charAt(0) != 'n') udp.send(data, curIP, port);
 }

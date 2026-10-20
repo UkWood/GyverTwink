@@ -1,5 +1,16 @@
 void receive(byte[] ubuf) {
   if (ubuf[0] != 'G' || ubuf[1] != 'T') return;
+
+  // расширение протокола: ответ на {5} и подтверждения команд {6, cmd, seq, status}
+  if (ubuf.length >= 4 && (ubuf[2] & 0xFF) == 5) {
+    ackEnable();
+    return;
+  }
+  if (ubuf.length >= 6 && (ubuf[2] & 0xFF) == 6) {
+    ackReceived(ubuf[4] & 0xFF, ubuf[5] & 0xFF);
+    return;
+  }
+
   int[] data = new int[10];
   for (int i = 0; i < ubuf.length - 2; i++) {
     data[i] = int(ubuf[i+2]);
