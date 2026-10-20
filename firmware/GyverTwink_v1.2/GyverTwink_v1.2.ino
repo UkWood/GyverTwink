@@ -47,6 +47,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <LittleFS.h>
+#include <Updater.h>
 #include <SimplePortal.h>
 #include <FastLED.h>
 #include <EEManager.h>
@@ -86,7 +87,9 @@ Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
 Timer offTmr(60000, false);
 Timer hlTmr(60000, false);   // автоматическое выключение подсветки светодиода из редактора координат
+Timer otaTmr(300000, false);   // окно обновления прошивки по WiFi (ota.ino)
 bool calibF = false;
+bool otaBusy = false;   // идёт запись прошивки (ota.ino): эффекты отключены
 byte curEff = 0;
 byte forceEff = 0;
 
@@ -169,5 +172,5 @@ void loop() {
   }
 
   // показываем эффект, если включены
-  if (!calibF && cfg.power) effects();
+  if (!calibF && !otaBusy && cfg.power) effects();   // во время записи прошивки эффекты не рисуем
 }

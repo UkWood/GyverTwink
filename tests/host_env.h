@@ -28,12 +28,15 @@ Effects effs[ACTIVE_PALETTES * 2];
 EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
 // порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
+EncButtonStub btn;
 ESP8266WebServer webServer(getenv("GT_WEB_PORT") ? atoi(getenv("GT_WEB_PORT")) : 0);
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
 Timer offTmr(60000, false);
 Timer hlTmr(60000, false);
+Timer otaTmr(300000, false);
 bool calibF = false;
+bool otaBusy = false;
 byte curEff = 0;
 byte forceEff = 0;
 
@@ -44,6 +47,9 @@ byte forceEff = 0;
 #include "../firmware/GyverTwink_v1.2/scenes.ino"
 #include "../firmware/GyverTwink_v1.2/coords.ino"
 #include "../firmware/GyverTwink_v1.2/vcalib.ino"
+#include "../firmware/GyverTwink_v1.2/faders.ino"
+#include "../firmware/GyverTwink_v1.2/ota.ino"
+#include "../firmware/GyverTwink_v1.2/button.ino"
 #include "../firmware/GyverTwink_v1.2/effects.ino"
 #include "../firmware/GyverTwink_v1.2/parsing.ino"
 #include "../firmware/GyverTwink_v1.2/web.ino"

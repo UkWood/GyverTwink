@@ -5,6 +5,8 @@
 #define HOST_SOCKET_UDP
 #include "host_env.h"
 #include <chrono>
+#include <fcntl.h>
+#include <unistd.h>
 #include <cstdlib>
 #include <string>
 #include <thread>
@@ -20,6 +22,8 @@ int main(int argc, char** argv) {
   }
   stripObj.setLeds(leds, LED_MAX);
   webBegin();
+  fcntl(0, F_SETFL, fcntl(0, F_GETFL, 0) | O_NONBLOCK);   // команды тестов по stdin (например BUTTON3 - три нажатия кнопки)
+  std::string cmdBuf;
   std::setvbuf(stdout, nullptr, _IOLBF, 0);
   std::printf("READY\n");
 
@@ -28,19 +32,44 @@ int main(int argc, char** argv) {
   for (;;) {
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
     fakeMillis() = 100000 + (uint32_t)ms;   // настоящее время для "антидребезга" и таймеров
+    char rb[64];
+    ssize_t rn = read(0, rb, sizeof(rb));
+    if (rn > 0) {
+      cmdBuf.append(rb, rn);
+      size_t nl;
+      while ((nl = cmdBuf.find('\n')) != std::string::npos) {
+        std::string cmd = cmdBuf.substr(0, nl);
+        cmdBuf.erase(0, nl + 1);
+        if (cmd.rfind("BUTTON", 0) == 0) {   // BUTTON1, BUTTON2, BUTTON3: нажатия кнопки
+          btn.clicks = atoi(cmd.c_str() + 6);
+          button();
+        }
+      }
+    }
     parsing();
     webTick();
     vcalibTick();
+    if (ESP.restarted) {   // «перезагрузка» после обновления: сохраняем принятый образ и выходим
+      if (const char* outp = getenv("GT_OTA_OUT")) {
+        FILE* f = fopen(outp, "wb");
+        if (f) {
+          fwrite(Update.data.data(), 1, Update.data.size(), f);
+          fclose(f);
+        }
+      }
+      std::printf("REBOOT\n");
+      return 0;
+    }
     int lit = -1;   // номер горящего светодиода (подсветка в редакторе координат)
     for (int i = 0; i < LED_MAX && lit < 0; i++) {
       if (leds[i].r || leds[i].g || leds[i].b) lit = i;
     }
-    char st[360];
+    char st[400];
     std::snprintf(st, sizeof(st),
                   "STATE bright=%d curEff=%d ledAm=%d maxMa=%d power=%d auto=%d rnd=%d period=%d offOn=%d offMin=%d force=%d forceEff=%d "
-                  "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d",
+                  "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d ota=%d",
                   cfg.bright, curEff, cfg.ledAm, pwr.maxMa, cfg.power, cfg.autoCh, cfg.rndCh, cfg.prdCh, cfg.turnOff, cfg.offTmr,
-                  forceTmr.state(), forceEff, effs[forceEff].fav, effs[forceEff].scale, effs[forceEff].speed, calibF, lit, mm.w, mm.h);
+                  forceTmr.state(), forceEff, effs[forceEff].fav, effs[forceEff].scale, effs[forceEff].speed, calibF, lit, mm.w, mm.h, otaOpen() ? 1 : 0);
     if (last != st) {
       last = st;
       std::printf("%s\n", st);

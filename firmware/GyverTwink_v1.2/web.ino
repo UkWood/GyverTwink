@@ -340,6 +340,65 @@ static void handleVcalibStop() {
   webSendVcalib();
 }
 
+// ---------- обновление прошивки (ota.ino) ----------
+static void handleOtaGet() {
+  char b[100];
+  snprintf(b, sizeof(b), "{\"open\":%d,\"left\":%u,\"free\":%u,\"busy\":%d}", otaOpen() ? 1 : 0, (unsigned)otaLeftSec(),
+           (unsigned)ESP.getFreeSketchSpace(), otaBusy ? 1 : 0);
+  webJson(200, b);
+}
+
+static bool otaDenied = false, otaFailed = false;
+
+static void otaFail(const char* why) {
+  otaFailed = true;
+  strncpy(otaDetail, why, sizeof(otaDetail) - 1);
+  otaDetail[sizeof(otaDetail) - 1] = '\0';
+}
+
+// загрузка файла: вызывается по кускам. Файл принимается только при открытом окне и заголовке страницы
+static void handleOtaUpload() {
+  HTTPUpload& up = webServer.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    otaDenied = otaFailed = false;
+    otaDetail[0] = '\0';
+    if (!otaOpen() || webServer.header(WEB_HDR) != WEB_HDR_VAL) {
+      otaDenied = true;
+      return;
+    }
+    otaBusy = true;
+    uint32_t maxSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (!Update.begin(maxSpace)) otaFail("begin");
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (otaDenied || otaFailed) return;
+    if (Update.write(up.buf, up.currentSize) != up.currentSize) otaFail("write");
+  } else if (up.status == UPLOAD_FILE_END) {
+    if (otaDenied || otaFailed) return;
+    if (!Update.end(true)) otaFail("end");
+  } else if (up.status == UPLOAD_FILE_ABORTED) {
+    if (!otaDenied) Update.end();
+    otaBusy = false;
+  }
+}
+
+// ответ после загрузки: успех -> закрыть окно и перезагрузиться через 0,8 с (чтобы ответ дошёл до страницы)
+static void handleOtaDone() {
+  if (otaDenied || !otaOpen() || webServer.header(WEB_HDR) != WEB_HDR_VAL) {
+    otaBusy = false;
+    webError(403, "ota-closed");
+    return;
+  }
+  if (otaFailed || Update.hasError()) {
+    otaBusy = false;
+    webError(500, "update");
+    return;
+  }
+  otaCloseWindow();
+  otaRebootAt = millis() + 800;
+  if (otaRebootAt == 0) otaRebootAt = 1;
+  webJson(200, "{\"ok\":1}");
+}
+
 void webBegin() {
   scenesBegin();
   static const char* hdrs[] = {WEB_HDR};
@@ -351,6 +410,8 @@ void webBegin() {
   webServer.on("/api/next", HTTP_POST, handleNext);
   webServer.on("/api/effect", HTTP_GET, handleEffectGet);
   webServer.on("/api/effect", HTTP_POST, handleEffectPost);
+  webServer.on("/api/ota", HTTP_GET, handleOtaGet);
+  webServer.on("/update", HTTP_POST, handleOtaDone, handleOtaUpload);
   webServer.on("/api/vcalib", HTTP_GET, handleVcalibGet);
   webServer.on("/api/vcalib/start", HTTP_POST, handleVcalibStart);
   webServer.on("/api/vcalib/stop", HTTP_POST, handleVcalibStop);
@@ -367,6 +428,7 @@ void webBegin() {
 }
 
 void webTick() {
+  otaTick();
   if (hlTmr.ready()) ledHighlightOff();
   webServer.handleClient();
   MDNS.update();

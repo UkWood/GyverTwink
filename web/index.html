@@ -19,6 +19,7 @@
   <button data-tab="scenes">Сцены</button>
   <button data-tab="vcalib">Калибровка</button>
   <button data-tab="coords">Координаты</button>
+  <button data-tab="ota">Прошивка</button>
 </nav>
 <main>
   <section class="tab active" id="tab-control">
@@ -104,6 +105,23 @@
       <div class="bar"><div id="vBar2"></div></div>
       <p class="hint" id="vResult"></p>
       <p class="hint">Разбор идёт в браузере и занимает от десятков секунд до пары минут (видео перематывается по кадрам). Результат откроется на вкладке «Координаты»: проверь точки и сохрани.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-ota">
+    <div class="card">
+      <h2>Обновление прошивки по WiFi</h2>
+      <p>Сейчас установлена версия <b id="otaVer">—</b>.</p>
+      <ol class="steps">
+        <li>Скачай файл <code>firmware.bin</code> нужной версии: артефакт сборки в GitHub Actions или файл из релиза.</li>
+        <li>Нажми кнопку на гирлянде <b>три раза подряд</b>. Лента мигнёт голубым, и на 5 минут откроется окно обновления. Так прошить гирлянду может только тот, кто рядом с ней.</li>
+        <li>Выбери файл и нажми «Загрузить». Не выключай питание, пока идёт запись.</li>
+      </ol>
+      <p class="hint" id="otaStatus"></p>
+      <input id="otaFile" type="file" accept=".bin,application/octet-stream">
+      <div class="row"><button id="otaGo" class="btn" disabled>Загрузить и обновить</button></div>
+      <div class="bar"><div id="otaBar"></div></div>
+      <p class="hint" id="otaResult"></p>
     </div>
   </section>
 
