@@ -118,6 +118,7 @@ try {
   check((await page.textContent('#foot')).includes('Прошивка host'), 'версия прошивки показана в подвале');
   check((await page.$eval('#bright', (e) => e.value)) === '100', 'яркость из состояния устройства (100)');
 
+  check((await page.$$('#tabs [role=tab]')).length === 6 && (await page.getAttribute('#tabs [data-tab=control]', 'aria-selected')) === 'true', 'вкладки размечены для скринридеров (role=tab, aria-selected)');
   console.log('вкладка «Управление»');
   await page.click('#power');
   check(await stateIs('power', 0), 'кнопка питания выключает ленту');
@@ -470,7 +471,9 @@ try {
     jsErrors.length = 0;
   }
 
-  for (const tab of ['control', 'effects', 'scenes']) {
+  await page.click('[data-tab=effects]');
+  check((await page.getAttribute('#tabs [data-tab=effects]', 'aria-selected')) === 'true' && (await page.getAttribute('#tabs [data-tab=control]', 'aria-selected')) === 'false', 'aria-selected переключается вместе с вкладкой');
+  for (const tab of ['control', 'effects', 'scenes', 'vcalib', 'coords', 'ota']) {
     await page.click('[data-tab=' + tab + ']');
     check(await fitsScreen(), 'вкладка «' + tab + '» помещается по ширине экрана 390 px');
   }
