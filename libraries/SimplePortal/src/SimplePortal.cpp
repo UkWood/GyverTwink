@@ -19,6 +19,7 @@ const char SP_connect_page[] PROGMEM = R"rawliteral(
 </form>
 <h3>Switch WiFi mode</h3>
 <form action="/ap" method="POST">
+    <input type="text" name="pass" placeholder="AP password (8-31)" minlength="8" maxlength="31" required>
     <input type="submit" value="Access Point">
 </form>
 <form action="/local" method="POST">
@@ -41,7 +42,15 @@ void SP_handleConnect() {
   _SP_status = 1;
 }
 
+// в режиме точки доступа SSID очищается, а pass хранит пароль точки (8-31 символ)
 void SP_handleAP() {
+  String pass = _SP_server.arg("pass");
+  if (pass.length() < 8 || pass.length() > 31) {
+    _SP_server.send(400, "text/plain", "AP password must be 8-31 characters");
+    return;
+  }
+  portalCfg.SSID[0] = '\0';
+  strcpy(portalCfg.pass, pass.c_str());
   portalCfg.mode = WIFI_AP;
   _SP_status = 2;
 }

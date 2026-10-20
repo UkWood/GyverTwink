@@ -33,11 +33,13 @@ bool checkButton() {
   return false;
 }
 
-void setupAP() {
+// customPass - взять пароль точки из portalCfg.pass (иначе GT_AP_PASS).
+// После неудачного подключения к роутеру в pass лежит пароль роутера, его использовать нельзя.
+void setupAP(bool customPass) {
   DEBUG("AP Mode");
   WiFi.disconnect();
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(GT_AP_SSID, GT_AP_PASS);
+  WiFi.softAP(GT_AP_SSID, (customPass && strlen(portalCfg.pass) >= 8) ? portalCfg.pass : GT_AP_PASS);
   myIP = WiFi.softAPIP();
   server.begin();
   fadeBlink(CRGB::Magenta);
@@ -63,5 +65,5 @@ void setupSTA() {
   }
   fadeBlink(CRGB::Red);
   DEBUGLN("fail");
-  setupAP();
+  setupAP(false);
 }

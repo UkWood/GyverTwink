@@ -34,6 +34,8 @@
 
 // имя точки в режиме AP
 #define GT_AP_SSID "GyverTwink"
+// пароль по умолчанию: используется, только если пароль не задан в портале настройки
+// (старые установки и выход из портала без выбора). Рекомендуется задавать свой в портале: Access Point
 #define GT_AP_PASS "12345678"
 //#define DEBUG_SERIAL_GT   // раскомментируй, чтобы включить отладку
 
@@ -132,7 +134,9 @@ void setup() {
   if (EEwifi.begin(0, 'a') || checkButton()) portalRoutine();
 
   // создаём точку или подключаемся к AP
-  if (portalCfg.mode == WIFI_AP || (portalCfg.mode == WIFI_STA && portalCfg.SSID[0] == '\0')) setupAP();
+  // в режиме AP с пустым SSID поле pass хранит пароль точки, заданный в портале
+  bool apPass = portalCfg.mode == WIFI_AP && portalCfg.SSID[0] == '\0';
+  if (portalCfg.mode == WIFI_AP || (portalCfg.mode == WIFI_STA && portalCfg.SSID[0] == '\0')) setupAP(apPass);
   else setupSTA();
   DEBUGLN(myIP);
 
