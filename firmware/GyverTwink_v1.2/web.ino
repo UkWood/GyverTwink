@@ -150,7 +150,8 @@ static void handleEffectPost() {
 
 void webBegin() {
   static const char* hdrs[] = {WEB_HDR};
-  webServer.collectHeaders(hdrs, 1);
+  // (size_t): на ядре 3.x без приведения выбирается шаблон collectHeaders(const Args&...) и сборка падает
+  webServer.collectHeaders(hdrs, (size_t)1);
   webServer.on("/", HTTP_GET, handleRoot);
   webServer.on("/api/state", HTTP_GET, handleState);
   webServer.on("/api/set", HTTP_POST, handleSet);
