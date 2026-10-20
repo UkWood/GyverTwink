@@ -48,6 +48,7 @@
 #include <EncButton.h>
 #include "palettes.h"
 #include "Timer.h"
+#include "types.h"
 
 // ================== OBJECTS ==================
 WiFiServer server(80);
@@ -59,47 +60,18 @@ EncButton<EB_TICK, BTN_PIN> btn;
 IPAddress myIP;
 
 // ================== EEPROM BLOCKS ==================
-struct Cfg {
-  uint16_t ledAm = 50;
-  bool power = 1;
-  byte bright = 100;
-  bool autoCh = 0;
-  bool rndCh = 0;
-  byte prdCh = 1;
-  bool turnOff = 0;
-  byte offTmr = 60;
-};
 Cfg cfg;
 EEManager EEcfg(cfg);
 
 byte xy[LED_MAX][2];
 EEManager EExy(xy);
 
-struct MM {
-  byte minY = 0;
-  byte maxY = 255;
-  byte minX = 0;
-  byte maxX = 255;
-  byte w = 255;
-  byte h = 255;
-};
 MM mm;
 EEManager EEmm(mm);
 
-// настройки питания лежат в отдельном блоке в конце EEPROM,
-// чтобы не сдвигать блоки с калибровкой (иначе после обновления пришлось бы калибровать заново)
-struct Pwr {
-  uint16_t maxMa = POWER_LIMIT_MA;
-};
 Pwr pwr;
 EEManager EEpwr(pwr);
 
-#define ACTIVE_PALETTES 11
-struct Effects {
-  bool fav = true;
-  byte scale = 50;
-  byte speed = 150;
-};
 Effects effs[ACTIVE_PALETTES * 2];
 EEManager EEeff(effs);
 

@@ -17,6 +17,7 @@
 | `Android/gyvertwink.apk` | Собранное приложение (бинарник в репозитории) |
 | `libraries/` | Скопированные библиотеки: FastLED 3.4.0, EncButton, EEManager, SimplePortal |
 | `platformio.ini`, `.github/workflows/build.yml` | Сборка и CI |
+| `tests/` | Хост-тесты прошивки (заглушки Arduino/FastLED, ASan/UBSan) |
 
 ## Прошивка: карта файлов
 - `GyverTwink_v1.2.ino` — настройки (`LED_MAX=500`, пины), структуры EEPROM, `setup`/`loop`.
@@ -36,11 +37,12 @@ pio run -e d1_mini          # также nodemcuv2, d1_mini_legacy (ядро 2.7
 ```
 CI (GitHub Actions) собирает все три окружения на PR и push в `main`. Сеть в сессиях Claude Code ограничена:
 `downloads.arduino.cc`, `arduino.esp8266.com` и GitHub-релизы блокируются, поэтому локально
-платформу ESP8266 не скачать — полную проверку сборки даёт CI. Юнит-тестов пока нет (см. ROADMAP).
+платформу ESP8266 не скачать — полную проверку сборки даёт CI. Хост-тесты логики (parsing, switcher, power, effects) — `make -C tests` (нужен только g++, работает и в песочнице), см. `tests/README.md`; **запускай перед пушем изменений прошивки**.
 
 ## Правила и подводные камни
 - Протокол — **вход из сети без аутентификации**: любое значение из пакета валидировать
   (индексы, `ledAm ≤ LED_MAX`, номер эффекта `< 22`, длина пакета). Не вводить новых `while(true)` без выхода.
+- Структуры EEPROM лежат в `firmware/.../types.h` (его же используют тесты). Новый код протокола — вместе с тестом в `tests/test_firmware.cpp`.
 - Менять протокол можно только вместе с приложением (`processing/.../parsing.pde`, `UI.pde`) и `docs/UDP_protocol.txt`.
 - Координаты хранятся как `byte` (сетка 256×256); `mm.h` может быть 0.
 - `delay(myIP[3]*2)` в ответе на поиск — намеренная задержка против одновременных ответов.

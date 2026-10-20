@@ -40,3 +40,11 @@ jobs:
         with:
           name: firmware-${{ matrix.env }}
           path: .pio/build/${{ matrix.env }}/firmware.bin
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5   # зависание (например, бесконечный цикл в коде прошивки) не должно держать CI
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host tests (g++, AddressSanitizer + UBSan)
+        run: make -C tests
