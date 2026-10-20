@@ -50,9 +50,10 @@ nav {
   flex-wrap: wrap;
 }
 nav button {
-  flex: 1 1 auto;
-  min-height: 44px;
-  padding: 0 12px;
+  flex: 1 1 28%;
+  min-height: 42px;
+  padding: 0 8px;
+  font-size: 15px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--card);

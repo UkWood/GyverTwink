@@ -958,7 +958,10 @@ function initOta() {
 
 // ---------- вкладки ----------
 function showTab(name) {
-  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === name);
+  for (const b of document.querySelectorAll('#tabs button')) {
+    b.classList.toggle('active', b.dataset.tab === name);
+    b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+  }
   for (const s of document.querySelectorAll('.tab')) s.classList.toggle('active', s.id === 'tab-' + name);
   document.dispatchEvent(new CustomEvent('gt-tab', { detail: name }));
 }

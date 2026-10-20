@@ -150,7 +150,7 @@ static void handleEffectPost() {
 
 // ---------- сцены ----------
 static void webSendScenes() {
-  char b[700];
+  char b[480];   // худший случай (8 имён по 16 байт) - около 300; стек ESP8266 мал, лишнего не берём
   int n = snprintf(b, sizeof(b), "{\"max\":%d,\"scenes\":[", SCENE_SLOTS);
   bool first = true;
   for (int i = 0; i < SCENE_SLOTS && n < (int)sizeof(b) - 60; i++) {

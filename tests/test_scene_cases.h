@@ -102,6 +102,21 @@ TEST(scene_list_overwrite_delete_and_limits) {
   CHECK_EQ(scenePost("delete", {{"slot", "4"}}).code, 404);
 }
 
+TEST(scene_list_worst_case_fits_the_buffer) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  for (int i = 0; i < SCENE_SLOTS; i++) CHECK_EQ(scenePost("save", {{"slot", std::to_string(i)}, {"name", "0123456789abcdef"}}).code, 200);   // 8 имён по 16 байт
+  Resp r = webGet("/api/scenes");
+  CHECK_EQ(r.code, 200);
+  CHECK(r.body.size() < 400);
+  CHECK(r.body.size() > 250);
+  CHECK(r.body.back() == '}');
+  size_t n = 0;
+  for (size_t p = 0; (p = r.body.find("\"name\":", p)) != std::string::npos; p++) n++;
+  CHECK_EQ(n, SCENE_SLOTS);   // ничего не обрезано
+}
+
 TEST(scene_survives_reboot) {
   resetAll();
   webReady();
