@@ -1,5 +1,7 @@
 byte curTab = 0;
 TextInput leds = new TextInput();
+TextInput maLimit = new TextInput();   // лимит тока, мА (0 - выключен)
+boolean limitKnown = false;          // прошивка ответила на {7}, поле показываем
 TextInput subnet = new TextInput();
 DropDown dropIP = new DropDown();
 DropDown dropEff = new DropDown();
@@ -56,6 +58,7 @@ void ui() {
 }
 
 void cfgTab() {
+  boolean ext = limitKnown;   // одно значение на оба прохода (подписи и поля), иначе строки съедут
   uiGlobalX(offs);
   uiResetStep(20);
   LabelCenter("GyverTwink", 20);
@@ -68,6 +71,7 @@ void cfgTab() {
     Label("LED amount:", 15);
     Label("Power:", 15);
     Label("Brightness:", 15);
+    if (ext) Label("Current limit [mA]:", 15);
     Divider(width-offs*2);
     Label("Off timer:", 15);
     Label("Turn off in [1-240m]:", 15);
@@ -94,6 +98,15 @@ void cfgTab() {
     }
     if (power.show(WW, uiStep())) sendData(new int[] {2, 1, int(power.value)});
     if (bri.show(0, 255, WW, uiStep(), W)) sendData(new int[] {2, 2, int(bri.value)});
+    if (ext) {
+      if (maLimit.show(WW, uiStep(), W) && androidMode) openKeyboard();
+      if (maLimit.done()) {
+        if (androidMode) closeKeyboard();
+        int ma = constrain(int(maLimit.text), 0, 25500);   // в пакете mA/100 и mA%100 - один байт на каждое
+        maLimit.text = str(ma);
+        sendData(new int[] {2, 9, ma/100, ma % 100});
+      }
+    }
     uiStep();
     if (offT.show(WW, uiStep())) sendData(new int[] {2, 7, int(offT.value)});
     if (offS.show(0, 250, WW, uiStep(), W)) sendData(new int[] {2, 8, int(offS.value)});
