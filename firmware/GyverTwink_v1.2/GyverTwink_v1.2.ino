@@ -28,6 +28,10 @@
 #define LED_ORDER GRB   // порядок цветов ленты
 #define LED_MAX 500     // макс. светодиодов
 
+// ограничение тока ленты: яркость автоматически снижается, чтобы не перегрузить блок питания
+#define POWER_LIMIT_MA 0  // лимит по умолчанию в мА, 0 - выключен (меняется из приложения/по UDP)
+#define POWER_VOLTS 5     // напряжение питания ленты
+
 // имя точки в режиме AP
 #define GT_AP_SSID "GyverTwink"
 #define GT_AP_PASS "12345678"
@@ -80,6 +84,14 @@ struct MM {
 MM mm;
 EEManager EEmm(mm);
 
+// настройки питания лежат в отдельном блоке в конце EEPROM,
+// чтобы не сдвигать блоки с калибровкой (иначе после обновления пришлось бы калибровать заново)
+struct Pwr {
+  uint16_t maxMa = POWER_LIMIT_MA;
+};
+Pwr pwr;
+EEManager EEpwr(pwr);
+
 #define ACTIVE_PALETTES 11
 struct Effects {
   bool fav = true;
@@ -128,6 +140,7 @@ void setup() {
   EEeff.begin(EEcfg.nextAddr(), 'a');
   EEmm.begin(EEeff.nextAddr(), (uint8_t)LED_MAX);
   EExy.begin(EEmm.nextAddr(), (uint8_t)LED_MAX);
+  EEpwr.begin(EExy.nextAddr(), 'a');
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
   switchTmr.setPrd(cfg.prdCh * 60000ul);
@@ -146,6 +159,7 @@ void loop() {
   // менеджер епром
   EEcfg.tick();
   EEeff.tick();
+  EEpwr.tick();
 
   parsing();  // парсим udp
 

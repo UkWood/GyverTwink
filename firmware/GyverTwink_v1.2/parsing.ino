@@ -140,6 +140,10 @@ void handlePacket() {
           offTmr.setPrd(cfg.offTmr * 60000ul);
           if (cfg.turnOff) offTmr.restart();
           break;
+        case 9:   // лимит тока в мА (расширение): ubuf[4] * 100 + ubuf[5], 0 - выключен
+          pwr.maxMa = ubuf[4] * 100 + ubuf[5];
+          EEpwr.update();
+          break;
       }
       if (!cfg.power) strip->showLeds(0);
       EEcfg.update();
@@ -221,6 +225,13 @@ void handlePacket() {
           effs[forceEff].speed = ubuf[4];
           break;
       }
+      break;
+
+    case 7:   // запрос лимита тока (расширение)
+      answ[0] = 7;
+      answ[1] = pwr.maxMa / 100;
+      answ[2] = pwr.maxMa % 100;
+      reply(answ, 3);
       break;
 
     case 5:   // запрос возможностей протокола (расширения)
