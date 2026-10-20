@@ -70,7 +70,7 @@ PlatformIO сам скачает FastLED 3.5.0, остальные библио�
 
 ## Приложение
 Android: [Google Play](https://play.google.com/store/apps/details?id=ru.alexgyver.GyverTwink),
-[.apk из репозитория](https://github.com/AlexGyver/GyverTwink/raw/main/Android/gyvertwink.apk) (версия 1.7, без ACK и поля лимита тока).
+[.apk в Releases](https://github.com/UkWood/GyverTwink/releases/tag/app-v1.7) (версия 1.7, без ACK и поля лимита тока).
 Исходники — [`processing/GyverTwink`](processing/GyverTwink) (Processing; текущая версия 1.9, **APK из исходников пока не пересобран**).
 
 1. Телефон должен быть в той же сети, что и гирлянда: в домашней WiFi или в точке `GyverTwink`.
@@ -123,7 +123,6 @@ Android: [Google Play](https://play.google.com/store/apps/details?id=ru.alexgyve
 |---|---|
 | `firmware` | прошивка для ESP8266 |
 | `processing` | исходники приложения |
-| `Android` | собранное приложение (.apk) |
 | `libraries` | библиотеки для прошивки (EEManager, EncButton, SimplePortal; FastLED подтягивается PlatformIO) |
 | `schemes` | схемы подключения |
 | `docs` | протокол, дорожная карта, журнал решений |

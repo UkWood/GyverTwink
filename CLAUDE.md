@@ -14,7 +14,7 @@
 |---|---|
 | `firmware/GyverTwink_v1.2/` | Прошивка ESP8266 (Arduino, несколько `.ino`-вкладок) |
 | `processing/GyverTwink/` | Исходники Android-приложения (Processing) |
-| `Android/gyvertwink.apk` | Собранное приложение (бинарник в репозитории) |
+| GitHub Releases | Собранное приложение (APK); в дереве репозитория бинарников нет. Новый APK собирается вручную и прикладывается к релизу |
 | `libraries/` | Скопированные библиотеки: EncButton 1.x, EEManager, SimplePortal (FastLED подтягивается PlatformIO из реестра, версия в `platformio.ini`) |
 | `platformio.ini`, `.github/workflows/build.yml` | Сборка и CI |
 | `tests/` | Хост-тесты прошивки (заглушки Arduino/FastLED, ASan/UBSan) |

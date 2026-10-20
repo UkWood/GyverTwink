@@ -22,7 +22,7 @@
 - ✅ README: сборка, прошивка, первый запуск, приложение, калибровка, кнопка, лимит тока, диагностика
 - ✅ FastLED вынесен из репозитория в `lib_deps` (3.4.0 → 3.5.0, собирается на всех трёх окружениях). EEManager и SimplePortal изменены в проекте, EncButton 1.x несовместим с новыми версиями - остаются в `libraries/`
 - ⬜ Переход на FastLED новее 3.5.0: нужно переписать вывод с `strip->showLeds()` на `FastLED.show()` (в 3.9.0 методы контроллера недоступны)
-- 🟡 APK — в GitHub Releases: workflow `release-apk.yml` для публикации готов; после запуска и проверки релиза APK удаляется из дерева (отдельным PR)
+- ✅ APK вынесен в GitHub Releases ([app-v1.7](https://github.com/UkWood/GyverTwink/releases/tag/app-v1.7)), из дерева репозитория удалён (остался в истории git)
 
 ## Этап 2. Веб-интерфейс на ESP
 - ⬜ Каркас: `ESPAsyncWebServer` + WebSocket, страница (gzip) в LittleFS; управление питанием, яркостью, эффектами
