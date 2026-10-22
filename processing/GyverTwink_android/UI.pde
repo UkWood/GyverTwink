@@ -39,6 +39,13 @@ String[] effs = {
   "19. Pink_noise", 
   "20. Cyber_noise", 
   "21. RedWhite_noise", 
+  // новые эффекты прошивки 1.4 и новее (на более старой прошивке не работают)
+  "22. Twinkle", 
+  "23. Chase", 
+  "24. Fire", 
+  "25. Breath", 
+  "26. Wave_height", 
+  "27. Wave_radial", 
 };
 
 void ui() {
