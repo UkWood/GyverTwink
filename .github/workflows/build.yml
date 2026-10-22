@@ -118,13 +118,14 @@ jobs:
         with:
           node-version: 22
       # Зеркало пакетов Ubuntu на раннерах иногда отдаёт файлы с паузами по десятки секунд (apt занимал 15+ минут).
-      # Поэтому: у каждой попытки свой тайм-аут и повтор, а ffmpeg и numpy берутся из PyPI (быстрый CDN), без apt.
+      # Поэтому apt не используется: Chromium качается с CDN Playwright без --with-deps (системные библиотеки на раннере уже есть,
+      # недостающие шрифты тесту не нужны - он проверяет DOM), ffmpeg и numpy берутся из PyPI. У шагов есть тайм-ауты и повтор.
       - name: Playwright и Chromium
-        timeout-minutes: 12
+        timeout-minutes: 10
         run: |
           npm install --prefix tests/web
           for i in 1 2 3; do
-            timeout 240 npx --prefix tests/web playwright install --with-deps chromium && break
+            timeout 180 npx --prefix tests/web playwright install chromium && break
             echo "попытка $i не удалась"; test $i -lt 3 || exit 1
           done
       - name: ffmpeg и numpy (синтетическое видео для теста калибровки)
