@@ -60,3 +60,41 @@ test('подпись на сегодня: выключено, нет време�
   assert.equal(app.todayText({ en: 1, synced: 1, onAt: 1080, offAt: 1380 }), 'Сегодня: включится в 18:00, выключится в 23:00.');
   assert.match(app.todayText({ en: 1, synced: 1, onAt: -1, offAt: 1380 }), /включится: сегодня нет/);
 });
+
+test('токен: проверка допустимых символов и длины (как в прошивке)', () => {
+  for (const ok of ['abcdefgh', 'Secret-Token_01', 'a.b~c-d_e1', 'x'.repeat(32)]) assert.equal(app.tokenValid(ok), true, ok);
+  for (const bad of ['', 'abcdefg', 'x'.repeat(33), 'abc defgh', 'абвгдежз', 'abcdefg!', 'abc"defgh', 'abcdefgh\n', 'abc:defgh', 'abc/defgh']) assert.equal(app.tokenValid(bad), false, JSON.stringify(bad));
+});
+
+test('генерация токена: 16 понятных символов, допустим для прошивки, не повторяется', () => {
+  const seen = new Set();
+  for (let i = 0; i < 300; i++) {
+    const t = app.genToken();
+    assert.match(t, /^[A-HJ-NP-Za-km-z2-9]{16}$/);
+    assert.equal(app.tokenValid(t), true);
+    seen.add(t);
+  }
+  assert.equal(seen.size, 300);
+});
+
+test('генерация токена: хвост диапазона отбрасывается, символы равновероятны', () => {
+  // 256 % 56 = 32: байты 224..255 отбрасываются, остальные дают символы алфавита по порядку
+  const calls = [];
+  const rand = (a) => {
+    calls.push(a.length);
+    if (calls.length === 1) a.fill(255);                      // всё отброшено: нужен ещё вызов
+    else for (let i = 0; i < a.length; i++) a[i] = i;         // 0..31 -> первые 32 символа алфавита
+    return a;
+  };
+  const t = app.genToken(rand);
+  assert.equal(t.length, 16);
+  assert.equal(t, 'ABCDEFGHJKLMNPQR');
+  assert.ok(calls.length >= 2, 'отброшенные байты не используются');
+  // частоты на большой выборке: все 56 символов встречаются, перекоса нет
+  const freq = {};
+  for (let i = 0; i < 5000; i++) for (const ch of app.genToken()) freq[ch] = (freq[ch] || 0) + 1;
+  const counts = Object.values(freq);
+  assert.equal(counts.length, 56);
+  const mean = (5000 * 16) / 56;
+  for (const c of counts) assert.ok(c > mean * 0.85 && c < mean * 1.15, 'равномерность: ' + c + ' при среднем ' + Math.round(mean));
+});

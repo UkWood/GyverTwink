@@ -79,6 +79,16 @@ struct Sched {
   byte offT = SCHED_CLOCK;
 };
 
+// ---- защита доступа токеном (guard.ino): отдельный блок EEPROM в конце ----
+// Имена без слов auth/access: они пересекаются с SDK ESP8266 (AUTH_MAX и др.) и POSIX.
+#define TOKEN_MIN 8
+#define TOKEN_MAX 32
+
+struct Guard {
+  char token[TOKEN_MAX + 1] = "";   // пусто - защита выключена
+  byte udpOpen = 1;                 // 1 - команды записи по UDP (приложение) принимаются и при включённом токене
+};
+
 // ---- сцены (scenes.ino): типы здесь, потому что генератор прототипов Arduino вставляет их в начало скетча,
 // и сигнатуры функций со структурами в .ino-вкладках не компилируются ("'Scene' does not name a type") ----
 #define SCENE_SLOTS 8

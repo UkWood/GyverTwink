@@ -548,6 +548,101 @@ try {
     check(await fitsScreen(), 'вкладка «' + tab + '» помещается по ширине экрана 390 px');
   }
 
+  console.log('защита токеном');
+  const authInfo = async (tok) => (await fetch(base + '/api/auth', { headers: tok ? { 'X-GT-Token': tok } : {} })).json();
+  const stateWith = async (tok) => (await fetch(base + '/api/state', { headers: tok ? { 'X-GT-Token': tok } : {} })).status;
+  const openWindow = async () => { server.stdin.write('BUTTON3\n'); check(await stateIs('ota', 1), 'три нажатия кнопки открыли окно'); };
+  check((await authInfo()).on === 0 && (await stateWith('')) === 200, 'по умолчанию защиты нет: API открыт');
+  await page.click('[data-tab=ota]');
+  check(await until(async () => (await page.textContent('#gStatus')).includes('Защита выключена')), 'карточка защиты: выключена');
+  check(await page.isDisabled('#gSave'), 'пока окно закрыто, сохранить токен нельзя');
+  await page.click('#gGen');
+  const gen = await page.$eval('#gToken', (e) => e.value);
+  check(/^[A-HJ-NP-Za-km-z2-9]{16}$/.test(gen), 'кнопка «Сгенерировать»: 16 символов без похожих (' + gen + ')');
+  await openWindow();
+  check(await until(async () => !(await page.isDisabled('#gSave')), 5000), 'окно открыто: сохранение доступно');
+  await page.fill('#gToken', 'short');
+  await page.click('#gSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('8–32')), 'короткий токен: сообщение, на гирлянду не уходит');
+  check((await authInfo()).on === 0, 'гирлянда осталась без защиты');
+  await page.fill('#gToken', gen);
+  await page.click('#gSave');
+  check(await until(async () => (await authInfo()).on === 1), 'токен сохранён на гирлянде');
+  check((await stateWith('')) === 401 && (await stateWith('wrong-token-1')) === 401, 'без токена и с неверным API закрыт (401)');
+  check((await stateWith(gen)) === 200, 'с верным токеном API открыт');
+  check(await stateIs('ota', 0), 'после смены токена окно закрылось');
+  check(await until(async () => (await page.textContent('#gStatus')).includes('Защита включена')), 'карточка защиты: включена');
+  check((await page.textContent('#gHint')).includes('остаётся открытым'), 'предупреждение: управление по UDP пока открыто');
+  await page.click('[data-tab=control]');
+  await setRange('#bright', 55);
+  check(await stateIs('bright', 55), 'эта страница знает новый токен и продолжает управлять');
+  await page.reload();
+  check(await until(async () => (await page.textContent('#conn')) === 'на связи'), 'после перезагрузки страница входит сама (токен запомнен в браузере)');
+  check(await page.isHidden('#login'), 'окно входа не показано');
+
+  // UDP: приложение без токена; по умолчанию работает, после закрытия - нет
+  await udpSend([2, 2, 66]);
+  check(await stateIs('bright', 66), 'UDP при включённом токене по умолчанию работает (для приложения)');
+  await page.click('[data-tab=ota]');
+  await page.check('#gUdp');
+  check(await until(async () => (await authInfo(gen)).udpLock === 1), 'управление по UDP закрыто со страницы (нужен только токен, окно не нужно)');
+  await udpSend([2, 2, 99]);
+  await new Promise((r) => setTimeout(r, 400));
+  check(state.bright === 66, 'команда записи по UDP отклонена');
+  await page.uncheck('#gUdp');
+  check(await until(async () => (await authInfo(gen)).udpLock === 0), 'управление по UDP снова открыто');
+  await udpSend([2, 2, 77]);
+  check(await stateIs('bright', 77), 'UDP снова работает');
+
+  // вход по токену
+  await page.evaluate(() => localStorage.removeItem('gt-token'));
+  await page.reload();
+  check(await until(async () => await page.isVisible('#login')), 'без сохранённого токена показан вход');
+  await page.fill('#loginToken', 'short');
+  await page.click('#loginGo');
+  check((await page.textContent('#loginMsg')).includes('8–32'), 'слишком короткий токен отклонён на странице');
+  await page.fill('#loginToken', 'wrong-token-1234');
+  await page.click('#loginGo');
+  check(await until(async () => (await page.textContent('#loginMsg')).includes('Неверный токен')), 'неверный токен: сообщение');
+  check(await page.isVisible('#login') && (await page.evaluate(() => localStorage.getItem('gt-token') || '')) === '', 'вход остаётся, неверный токен не запоминается');
+  await page.fill('#loginToken', gen);
+  await page.click('#loginGo');
+  check(await until(async () => await page.isHidden('#login')), 'верный токен: вход выполнен');
+  check(await until(async () => (await page.textContent('#conn')) === 'на связи'), 'после входа страница работает');
+  check((await page.evaluate(() => localStorage.getItem('gt-token'))) === gen, 'токен запомнен');
+
+  // токен сменили с другого устройства: страница не засыпает гирлянду неверными запросами, а просит войти
+  await openWindow();
+  const gen2 = gen.split('').reverse().join('');
+  let rr = await form('/api/auth', { token: gen2 });
+  check(rr.status === 200, 'токен сменён «с другого устройства»');
+  check(await until(async () => await page.isVisible('#login'), 8000), 'у этой страницы токен устарел: показан вход');
+  check((await authInfo(gen2)).locked === 0, 'адрес не заблокирован (запросы после первого отказа не уходили)');
+  await page.fill('#loginToken', gen2);
+  await page.click('#loginGo');
+  check(await until(async () => await page.isHidden('#login')), 'вход с новым токеном');
+
+  // подбор ограничен: после нескольких неверных токенов адрес блокируется, даже верный токен не принимается
+  let last = 0;
+  for (let i = 0; i < 6; i++) last = await stateWith('guess-' + i);
+  check(last === 429, 'после серии неверных токенов адрес заблокирован (429)');
+  check((await stateWith(gen2)) === 429, 'в блокировке верный токен тоже не принимается');
+  check((await authInfo(gen2)).locked === 1, 'статус сообщает о блокировке');
+  // снять защиту: токен не нужен (физическое окно), блокировка на это не влияет
+  await openWindow();
+  rr = await form('/api/auth', { token: '' });
+  check(rr.status === 200 && (await authInfo()).on === 0, 'защита снята через окно, токен для этого не нужен');
+  check((await stateWith('')) === 200, 'после снятия защиты API снова открыт');
+  await page.evaluate(() => localStorage.removeItem('gt-token'));
+  await page.reload();
+  check(await until(async () => (await page.textContent('#conn')) === 'на связи'), 'страница работает без токена');
+  await page.click('[data-tab=ota]');
+  check(await until(async () => (await page.textContent('#gStatus')).includes('Защита выключена')), 'карточка защиты: выключена');
+  check(await page.isHidden('#login'), 'вход не показан');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_guard.png'), fullPage: true });
+  await page.click('[data-tab=control]');
+  jsErrors.length = 0;
+
   console.log('безопасность');
   const noHdr = await fetch(base + '/api/set', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'bright=1' });
   check(noHdr.status === 403, 'POST без заголовка страницы отклоняется (403)');
