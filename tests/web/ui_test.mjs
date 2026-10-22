@@ -118,7 +118,7 @@ try {
   check((await page.textContent('#foot')).includes('Прошивка host'), 'версия прошивки показана в подвале');
   check((await page.$eval('#bright', (e) => e.value)) === '100', 'яркость из состояния устройства (100)');
 
-  check((await page.$$('#tabs [role=tab]')).length === 6 && (await page.getAttribute('#tabs [data-tab=control]', 'aria-selected')) === 'true', 'вкладки размечены для скринридеров (role=tab, aria-selected)');
+  check((await page.$$('#tabs [role=tab]')).length === 7 && (await page.getAttribute('#tabs [data-tab=control]', 'aria-selected')) === 'true', 'вкладки размечены для скринридеров (role=tab, aria-selected)');
   console.log('вкладка «Управление»');
   await page.click('#power');
   check(await stateIs('power', 0), 'кнопка питания выключает ленту');
@@ -273,6 +273,59 @@ try {
   await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_scenes.png'), fullPage: true });
   jsErrors.length = 0;
 
+  console.log('вкладка «Расписание»');
+  const form = async (p, params) => {
+    const r = await fetch(base + p, { method: 'POST', headers: { 'X-Requested-With': 'GyverTwink', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  };
+  const getSched = async () => (await fetch(base + '/api/schedule')).json();
+  await page.click('[data-tab=sched]');
+  check(await until(async () => (await page.textContent('#sClock')) === 'Время не установлено'), 'часы не установлены: так и написано');
+  check((await getSched()).synced === 0, 'устройство подтверждает: времени нет');
+  check(await page.isHidden('#sGeo'), 'координаты скрыты, пока нет событий по солнцу');
+  await page.click('#sSync');
+  check(await until(async () => /^\d\d:\d\d:\d\d \(UTC/.test(await page.textContent('#sClock'))), 'после синхронизации страница показывает часы гирлянды');
+  let sc = await getSched();
+  const browserTz = await page.evaluate(() => -new Date().getTimezoneOffset());
+  check(sc.synced === 1 && sc.src === 'manual', 'время установлено со страницы (источник: manual)');
+  check(sc.tz === browserTz, 'часовой пояс взят у этого устройства');
+  check(Math.abs(sc.utc - Date.now() / 1000) < 15, 'время гирлянды совпадает с часами компьютера');
+  await page.check('#sEn');
+  check(await until(async () => (await getSched()).en === 1), 'расписание включено со страницы');
+  await page.uncheck('#sDays [data-day="5"]');
+  await page.uncheck('#sDays [data-day="6"]');
+  check(await until(async () => (await getSched()).days === 31), 'дни недели: только будни (маска 31)');
+  await page.selectOption('#sOnT', '1');
+  check(await page.isVisible('#sGeo') && await page.isVisible('#sOnOff') && await page.isHidden('#sOnTime'), 'выбран закат: поля смещения и координат появились сразу');
+  check(await until(async () => (await getSched()).onT === 1), 'тип включения - закат');
+  await setNumber('#sOnOff', -30);
+  await page.fill('#sLat', '55.75');
+  await page.dispatchEvent('#sLat', 'change');
+  await page.fill('#sLon', '37.62');
+  await page.dispatchEvent('#sLon', 'change');
+  check(await until(async () => { const s = await getSched(); return s.onV === -30 && s.lat === 5575 && s.lon === 3762; }), 'смещение -30 минут, координаты 55,75 и 37,62 записаны');
+  check(await until(async () => (await page.textContent('#sToday')).includes('включится')), 'на странице видно, когда сегодня включится гирлянда');
+  await setNumber('#sOnOff', 999);
+  check(await until(async () => (await page.textContent('#toast')).includes('Смещение')), 'смещение 999: сообщение об ошибке');
+  check((await getSched()).onV === -30, 'неверное значение устройству не отправлено');
+  await page.selectOption('#sOnT', '0');
+  check(await until(async () => (await getSched()).onT === 0), 'снова включение по времени');
+  check(await page.isVisible('#sOnTime') && (await page.$eval('#sOnTime', (e) => e.value)) !== '', 'у поля времени есть значение по умолчанию');
+  // срабатывание по часам гирлянды: ставим время за несколько секунд до события и ждём
+  check((await form('/api/schedule', { en: 1, tz: 0, days: 127, onT: 0, onV: 1080, offT: 0, offV: 1380 })).status === 200, 'подготовка: включение 18:00, выключение 23:00 (UTC)');
+  await form('/api/set', { power: 0 });
+  check(await stateIs('power', 0), 'подготовка: гирлянда выключена');
+  await form('/api/time', { unix: Math.floor(Date.UTC(2026, 9, 22, 17, 59, 55) / 1000) });
+  check(await until(() => state.power === 1, 20000), 'в 18:00 по часам гирлянды расписание её включило');
+  check(await until(async () => (await page.textContent('#sToday')).includes('включится в 18:00'), 15000), 'страница показывает события сегодняшнего дня');
+  await form('/api/time', { unix: Math.floor(Date.UTC(2026, 9, 22, 22, 59, 55) / 1000) });
+  check(await until(() => state.power === 0, 20000), 'в 23:00 расписание её выключило');
+  check((await form('/api/time', { unix: 5 })).status === 400, 'неверное время отклоняется');
+  check((await form('/api/schedule', { tz: 9999 })).status === 400, 'неверный пояс отклоняется');
+  await page.selectOption('#sOnT', '0');
+  check(await fitsScreen(), 'вкладка «Расписание» помещается по ширине экрана 390 px');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_sched.png'), fullPage: true });
+  jsErrors.length = 0;
 
   console.log('вкладка «Координаты»');
   const api = async (method, p, body, q = '') => {
@@ -490,7 +543,7 @@ try {
 
   await page.click('[data-tab=effects]');
   check((await page.getAttribute('#tabs [data-tab=effects]', 'aria-selected')) === 'true' && (await page.getAttribute('#tabs [data-tab=control]', 'aria-selected')) === 'false', 'aria-selected переключается вместе с вкладкой');
-  for (const tab of ['control', 'effects', 'scenes', 'vcalib', 'coords', 'ota']) {
+  for (const tab of ['control', 'effects', 'scenes', 'sched', 'vcalib', 'coords', 'ota']) {
     await page.click('[data-tab=' + tab + ']');
     check(await fitsScreen(), 'вкладка «' + tab + '» помещается по ширине экрана 390 px');
   }

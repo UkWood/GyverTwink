@@ -47,9 +47,19 @@ int main(int argc, char** argv) {
         }
       }
     }
+    // часы расписания идут вместе с настоящим временем после установки (POST /api/time)
+    static uint32_t timeBase = 0, timeExpected = 0;
+    static int64_t timeBaseMs = 0;
+    if (fakeEpoch() != timeExpected) {
+      timeBase = timeExpected = fakeEpoch();
+      timeBaseMs = ms;
+    } else if (timeBase) {
+      timeExpected = fakeEpoch() = timeBase + (uint32_t)((ms - timeBaseMs) / 1000);
+    }
     parsing();
     webTick();
     vcalibTick();
+    schedTick();
     if (ESP.restarted) {   // «перезагрузка» после обновления: сохраняем принятый образ и выходим
       if (const char* outp = getenv("GT_OTA_OUT")) {
         FILE* f = fopen(outp, "wb");

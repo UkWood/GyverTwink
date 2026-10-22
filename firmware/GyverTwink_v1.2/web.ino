@@ -39,6 +39,19 @@ static int webArgInt(const char* name, long lo, long hi, long& v) {
   return (v < lo || v > hi) ? -1 : 1;
 }
 
+// аргумент со знаком: 1 - принят, 0 - его нет в запросе, -1 - не число или вне диапазона
+static int webArgSigned(const char* name, long lo, long hi, long& v) {
+  if (!webServer.hasArg(name)) return 0;
+  String s = webServer.arg(name);
+  unsigned i = (s.length() > 0 && s[0] == '-') ? 1 : 0;
+  if (s.length() == i || s.length() > 7) return -1;
+  for (unsigned k = i; k < s.length(); k++) {
+    if (s[k] < '0' || s[k] > '9') return -1;
+  }
+  v = s.toInt();
+  return (v < lo || v > hi) ? -1 : 1;
+}
+
 static void webSendState() {
   char b[320];
   snprintf(b, sizeof(b),
@@ -55,6 +68,87 @@ static void webSendEffect(byte n) {
   snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u}", (unsigned)n, effAt(n).fav ? 1 : 0,
            (unsigned)effAt(n).scale, (unsigned)effAt(n).speed);
   webJson(200, b);
+}
+
+// ---------- расписание и время (schedule.ino) ----------
+static void webSendSchedule() {
+  char b[300];
+  int onAt, offAt;
+  schedToday(onAt, offAt);
+  static const char* const src[] = {"none", "ntp", "manual"};
+  snprintf(b, sizeof(b),
+           "{\"en\":%d,\"tz\":%d,\"lat\":%d,\"lon\":%d,\"days\":%u,\"onT\":%u,\"onV\":%d,\"offT\":%u,\"offV\":%d,"
+           "\"synced\":%d,\"src\":\"%s\",\"utc\":%lu,\"onAt\":%d,\"offAt\":%d}",
+           sched.en ? 1 : 0, sched.tz, sched.lat, sched.lon, (unsigned)sched.days, (unsigned)sched.onT, sched.onV,
+           (unsigned)sched.offT, sched.offV, timeValid() ? 1 : 0, src[timeSource()], timeValid() ? (unsigned long)GT_NOW() : 0ul,
+           onAt, offAt);
+  webJson(200, b);
+}
+
+static void handleScheduleGet() {
+  webSendSchedule();
+}
+
+// поле расписания: если есть в запросе - проверить и записать в cur; false - ошибка уже отправлена
+static bool webSchedArg(const char* name, long lo, long hi, long& cur) {
+  long v;
+  int r = webArgSigned(name, lo, hi, v);
+  if (r < 0) {
+    webError(400, name);
+    return false;
+  }
+  if (r > 0) cur = v;
+  return true;
+}
+
+// POST /api/schedule: любые из en 0/1, tz (минуты), lat и lon (сотые доли градуса), days (маска 0-127),
+// onT и offT (0 - время, 1 - закат, 2 - рассвет), onV и offV (минуты суток или смещение в минутах). Всё или ничего.
+static void handleSchedulePost() {
+  if (!webAllowed()) return;
+  long en = sched.en, tz = sched.tz, lat = sched.lat, lon = sched.lon, days = sched.days;
+  long onT = sched.onT, offT = sched.offT, onV = sched.onV, offV = sched.offV;
+  if (!webSchedArg("en", 0, 1, en) || !webSchedArg("tz", -720, 840, tz) || !webSchedArg("lat", -9000, 9000, lat) ||
+      !webSchedArg("lon", -18000, 18000, lon) || !webSchedArg("days", 0, 127, days) || !webSchedArg("onT", 0, 2, onT) ||
+      !webSchedArg("offT", 0, 2, offT) || !webSchedArg("onV", -1439, 1439, onV) || !webSchedArg("offV", -1439, 1439, offV)) {
+    return;
+  }
+  if (!schedValueOk(onT, onV)) {
+    webError(400, "onV");
+    return;
+  }
+  if (!schedValueOk(offT, offV)) {
+    webError(400, "offV");
+    return;
+  }
+  sched.en = en;
+  sched.tz = tz;
+  sched.lat = lat;
+  sched.lon = lon;
+  sched.days = days;
+  sched.onT = onT;
+  sched.offT = offT;
+  sched.onV = onV;
+  sched.offV = offV;
+  schedChanged();
+  webSendSchedule();
+}
+
+// POST /api/time: unix - время UTC в секундах (страница берёт его у телефона или компьютера)
+static void handleTimePost() {
+  if (!webAllowed()) return;
+  String s = webServer.arg("unix");
+  uint64_t t = 0;
+  bool ok = webServer.hasArg("unix") && s.length() > 0 && s.length() <= 10;
+  for (unsigned i = 0; ok && i < s.length(); i++) {
+    ok = s[i] >= '0' && s[i] <= '9';
+    t = t * 10 + (s[i] - '0');
+  }
+  if (!ok || t < TIME_VALID_MIN || t > TIME_VALID_MAX) {
+    webError(400, "unix");
+    return;
+  }
+  timeSet((uint32_t)t);
+  webSendSchedule();
 }
 
 static void handleRoot() {
@@ -410,6 +504,9 @@ void webBegin() {
   webServer.on("/api/next", HTTP_POST, handleNext);
   webServer.on("/api/effect", HTTP_GET, handleEffectGet);
   webServer.on("/api/effect", HTTP_POST, handleEffectPost);
+  webServer.on("/api/schedule", HTTP_GET, handleScheduleGet);
+  webServer.on("/api/schedule", HTTP_POST, handleSchedulePost);
+  webServer.on("/api/time", HTTP_POST, handleTimePost);
   webServer.on("/api/ota", HTTP_GET, handleOtaGet);
   webServer.on("/update", HTTP_POST, handleOtaDone, handleOtaUpload);
   webServer.on("/api/vcalib", HTTP_GET, handleVcalibGet);

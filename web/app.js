@@ -28,6 +28,8 @@ const FIELD_NAMES = {
   ledAm: 'количество светодиодов', power: 'питание', bright: 'яркость', auto: 'автосмена', rnd: 'случайный порядок',
   period: 'период смены', offOn: 'таймер выключения', offMin: 'минуты до выключения', maxMa: 'лимит тока',
   n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта',
+  tz: 'часовой пояс', lat: 'широта', lon: 'долгота', days: 'дни недели', onT: 'тип включения', offT: 'тип выключения',
+  onV: 'время или смещение включения', offV: 'время или смещение выключения', unix: 'время',
 };
 // не относящиеся к параметрам коды ошибок прошивки
 const ERROR_TEXT = {
@@ -969,6 +971,188 @@ function initOta() {
   });
 }
 
+// ---------- вкладка «Расписание» ----------
+// Чистые функции (проверяются в web/test/schedule.test.mjs)
+const pad2 = (n) => String(n).padStart(2, '0');
+function minToTime(m) {
+  return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60);
+}
+// 'ЧЧ:ММ' -> минуты суток, -1 если не время
+function timeToMin(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
+  if (!m) return -1;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  return h > 23 || mi > 59 ? -1 : h * 60 + mi;
+}
+function tzLabel(min) {
+  const a = Math.abs(min);
+  return 'UTC' + (min < 0 ? '−' : '+') + Math.floor(a / 60) + (a % 60 ? ':' + pad2(a % 60) : '');
+}
+// маска дней (бит 0 - понедельник) <-> массив из 7 флагов
+const daysFromMask = (mask) => Array.from({ length: 7 }, (_, i) => !!((mask >> i) & 1));
+const maskFromDays = (flags) => flags.reduce((m, f, i) => m | (f ? 1 << i : 0), 0);
+// местное время из UTC (секунды) и пояса (минуты): 'ЧЧ:ММ:СС'
+function clockText(utc, tzMin) {
+  const t = Math.floor(utc + tzMin * 60);
+  const s = ((t % 86400) + 86400) % 86400;
+  return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor(s / 60) % 60) + ':' + pad2(s % 60);
+}
+// градусы -> сотые доли с проверкой диапазона; null - не число или вне диапазона
+function degToCenti(v, limit) {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : v;
+  if (v === '' || v === null || !Number.isFinite(n) || Math.abs(n) > limit) return null;
+  return Math.round(n * 100);
+}
+const SRC_TEXT = { none: 'время не установлено', ntp: 'время из интернета (NTP)', manual: 'время со страницы, до перезагрузки гирлянды' };
+function todayText(s) {
+  if (!s.en) return 'Расписание выключено.';
+  if (!s.synced) return 'Расписание не работает, пока не установлено время.';
+  const part = (m, what) => (m < 0 ? what + ': сегодня нет' : what + ' в ' + minToTime(m));
+  return 'Сегодня: ' + part(s.onAt, 'включится') + ', ' + part(s.offAt, 'выключится') + '.';
+}
+
+const sched = { st: null, fetched: 0, timer: 0, tick: 0 };
+
+function schedFill(force) {
+  const s = sched.st;
+  if (!s) return;
+  setVal('sEn', s.en, force);
+  setVal('sTz', s.tz / 60, force);
+  const days = daysFromMask(s.days);
+  document.querySelectorAll('#sDays input').forEach((el) => { el.checked = days[Number(el.dataset.day)]; });
+  for (const [p, t, v] of [['On', s.onT, s.onV], ['Off', s.offT, s.offV]]) {
+    setVal('s' + p + 'T', t, force);
+    if (t === 0) setVal('s' + p + 'Time', minToTime(v), force);
+    else setVal('s' + p + 'Off', v, force);
+  }
+  schedLayout();
+  setVal('sLat', s.lat / 100, force);
+  setVal('sLon', s.lon / 100, force);
+  $('sToday').textContent = todayText(s);
+  schedClock();
+}
+
+// какое поле показывать у события (время суток или смещение от солнца), подписи, блок координат
+function schedLayout() {
+  for (const p of ['On', 'Off']) {
+    const t = Number($('s' + p + 'T').value);
+    $('s' + p + 'Time').hidden = t !== 0;
+    $('s' + p + 'Off').hidden = t === 0;
+    $('s' + p + 'Label').textContent = (p === 'On' ? 'Включение' : 'Выключение') + (t === 0 ? ': время' : ': минут от ' + (t === 1 ? 'заката' : 'рассвета') + ' (− раньше)');
+    $('s' + p + 'Label').htmlFor = t === 0 ? 's' + p + 'Time' : 's' + p + 'Off';
+  }
+  $('sGeo').hidden = Number($('sOnT').value) === 0 && Number($('sOffT').value) === 0;
+}
+
+// сменили тип события: поля сразу перестраиваются, пустым дают разумные значения
+function schedTypeChanged(p) {
+  const t = Number($('s' + p + 'T').value);
+  if (t !== 0 && $('s' + p + 'Off').value === '') $('s' + p + 'Off').value = 0;
+  if (t === 0 && !$('s' + p + 'Time').value) $('s' + p + 'Time').value = p === 'On' ? '18:00' : '23:00';
+  schedLayout();
+  schedSend();
+}
+
+function schedClock() {
+  const s = sched.st;
+  if (!s) return;
+  $('sClock').textContent = s.synced
+    ? clockText(s.utc + (Date.now() - sched.fetched) / 1000, s.tz) + ' (' + tzLabel(s.tz) + '), ' + SRC_TEXT[s.src]
+    : 'Время не установлено';
+}
+
+async function schedLoad() {
+  try {
+    sched.st = await api.get('/api/schedule');
+    sched.fetched = Date.now();
+    schedFill(false);
+  } catch (e) { /* связь пропала: покажет значок */ }
+}
+
+// собрать настройки со страницы; null - что-то заполнено неверно (сообщение уже показано)
+function schedCollect() {
+  const bad = (msg) => { toast(msg); return null; };
+  const tz = Math.round(Number($('sTz').value.replace(',', '.')) * 60);
+  if ($('sTz').value === '' || !Number.isFinite(tz) || tz < -720 || tz > 840) return bad('Часовой пояс: от −12 до +14 часов');
+  const p = { en: $('sEn').checked ? 1 : 0, tz, days: maskFromDays([...document.querySelectorAll('#sDays input')].map((e) => e.checked)) };
+  for (const e of ['On', 'Off']) {
+    const t = Number($('s' + e + 'T').value);
+    p[e.toLowerCase() + 'T'] = t;
+    if (t === 0) {
+      const m = timeToMin($('s' + e + 'Time').value);
+      if (m < 0) return bad('Укажи время ' + (e === 'On' ? 'включения' : 'выключения'));
+      p[e.toLowerCase() + 'V'] = m;
+    } else {
+      const o = Number($('s' + e + 'Off').value);
+      if ($('s' + e + 'Off').value === '' || !Number.isInteger(o) || o < -240 || o > 240) return bad('Смещение: целое число минут от −240 до 240');
+      p[e.toLowerCase() + 'V'] = o;
+    }
+  }
+  const lat = degToCenti($('sLat').value, 90);
+  const lon = degToCenti($('sLon').value, 180);
+  if (!$('sGeo').hidden && (lat === null || lon === null)) return bad('Координаты: широта от −90 до 90, долгота от −180 до 180');
+  if (lat !== null && lon !== null) {
+    p.lat = lat;
+    p.lon = lon;
+  }
+  return p;
+}
+
+async function schedSend() {
+  const p = schedCollect();
+  if (!p) return;
+  try {
+    sched.st = await api.post('/api/schedule', p);
+    sched.fetched = Date.now();
+    schedFill(false);
+  } catch (e) {
+    toast(e.message);
+    schedLoad().then(() => schedFill(true));
+  }
+}
+
+// время и часовой пояс этого устройства -> гирлянде (тихо - при автоматической отправке)
+async function schedSyncTime(quiet) {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    sched.st = await api.post('/api/time', { unix: now });
+    sched.fetched = Date.now();
+    if (!quiet) {
+      const tz = -new Date().getTimezoneOffset();
+      sched.st = await api.post('/api/schedule', { tz });
+    }
+    schedFill(true);
+    toast(quiet ? 'Время гирлянды установлено с этого устройства' : 'Время и часовой пояс взяты с этого устройства', true);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function initSched() {
+  const send = debounced(schedSend, 500);
+  $('sEn').addEventListener('change', schedSend);
+  $('sOnT').addEventListener('change', () => schedTypeChanged('On'));
+  $('sOffT').addEventListener('change', () => schedTypeChanged('Off'));
+  // числа и время отправляются по завершении ввода (change), а не на каждую цифру
+  for (const id of ['sTz', 'sOnTime', 'sOnOff', 'sOffTime', 'sOffOff', 'sLat', 'sLon']) {
+    trackBusy($(id));
+    $(id).addEventListener('change', send);
+  }
+  document.querySelectorAll('#sDays input').forEach((el) => el.addEventListener('change', schedSend));
+  $('sSync').addEventListener('click', () => schedSyncTime(false));
+  const poll = () => {
+    clearTimeout(sched.timer);
+    clearInterval(sched.tick);
+    if (!document.getElementById('tab-sched').classList.contains('active')) return;
+    sched.tick = setInterval(schedClock, 1000);   // часы идут между опросами
+    schedLoad().finally(() => { sched.timer = setTimeout(poll, 5000); });
+  };
+  document.addEventListener('gt-tab', poll);
+  // при включённом расписании и неустановленном времени страница сама передаёт время (режим точки доступа)
+  schedLoad().then(() => { if (sched.st && sched.st.en && !sched.st.synced) schedSyncTime(true); });
+}
+
 // ---------- вкладки ----------
 function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) {
@@ -994,9 +1178,10 @@ function init() {
   initCoords();
   initVcalib();
   initOta();
+  initSched();
   refresh();
   setInterval(refresh, 2000);
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };

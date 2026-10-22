@@ -45,6 +45,8 @@
 
 // ================== LIBS ==================
 #include <ESP8266WiFi.h>
+#include <time.h>
+#include <sys/time.h>
 #include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
@@ -87,6 +89,10 @@ EEManager EEeff(effs);
 // новые эффекты (с номера ACTIVE_PALETTES * 2): отдельный блок в конце EEPROM, чтобы не сдвигать остальные
 Effects effsX[EXT_EFFECTS];
 EEManager EEfx(effsX);
+
+// расписание (schedule.ino): тоже отдельный блок в конце
+Sched sched;
+EEManager EEsched(sched);
 
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
@@ -135,6 +141,7 @@ void setup() {
   EEpwr.begin(EExy.nextAddr(), 'a');
   fxDefaults(effsX);   // значения по умолчанию, если блока ещё нет (прочитанный из EEPROM их заменит)
   EEfx.begin(EEpwr.nextAddr(), 'a');
+  EEsched.begin(EEfx.nextAddr(), 'a');
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
   switchTmr.setPrd(cfg.prdCh * 60000ul);
@@ -144,6 +151,7 @@ void setup() {
   cfg.turnOff = false;
   strip->setLeds(leds, cfg.ledAm);
   udp.begin(8888);
+  schedBegin(WiFi.status() == WL_CONNECTED);   // NTP только при подключении к роутеру (в режиме точки доступа интернета нет)
   webBegin();   // веб-интерфейс и mDNS (gyvertwink.local)
 }
 
@@ -156,10 +164,12 @@ void loop() {
   EEeff.tick();
   EEpwr.tick();
   EEfx.tick();
+  EEsched.tick();
 
   parsing();  // парсим udp
   webTick();  // веб-интерфейс
   vcalibTick();   // калибровка по видео (если запущена)
+  schedTick();    // расписание
 
   // таймер принудительного показа эффектов
   if (forceTmr.ready()) {

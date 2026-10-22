@@ -88,6 +88,20 @@ input[type=number], input[type=text] {
   font: inherit;
 }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
+select, input[type=time] {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+#tab-sched .row input[type=number] { width: 96px; }
+#tab-sched .row input[type=time] { width: 160px; }
+#tab-sched .dayrow { flex-wrap: wrap; }
+#sDays { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+#sDays label { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
 button.btn {
   min-height: 46px;
   padding: 0 18px;

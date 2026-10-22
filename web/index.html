@@ -17,6 +17,7 @@
   <button role="tab" aria-controls="tab-control" aria-selected="true" data-tab="control" class="active">Управление</button>
   <button role="tab" aria-controls="tab-effects" aria-selected="false" data-tab="effects">Эффекты</button>
   <button role="tab" aria-controls="tab-scenes" aria-selected="false" data-tab="scenes">Сцены</button>
+  <button role="tab" aria-controls="tab-sched" aria-selected="false" data-tab="sched">Расписание</button>
   <button role="tab" aria-controls="tab-vcalib" aria-selected="false" data-tab="vcalib">Калибровка</button>
   <button role="tab" aria-controls="tab-coords" aria-selected="false" data-tab="coords">Координаты</button>
   <button role="tab" aria-controls="tab-ota" aria-selected="false" data-tab="ota">Прошивка</button>
@@ -75,6 +76,36 @@
       <h2>Мои сцены</h2>
       <ul id="sceneList"></ul>
       <p id="sceneEmpty" class="hint">Пока нет сохранённых сцен.</p>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-sched" role="tabpanel">
+    <div class="card">
+      <h2>Часы гирлянды</h2>
+      <p id="sClock">—</p>
+      <button id="sSync" class="btn secondary block">Взять время и часовой пояс с этого устройства</button>
+      <p class="hint">С домашним WiFi, у которого есть интернет, время приходит само (NTP). В режиме точки доступа интернета нет: время задаёт эта страница, а после перезагрузки гирлянды оно пропадает (страница передаст его снова, когда ты её откроешь).</p>
+    </div>
+    <div class="card">
+      <h2>Расписание</h2>
+      <div class="row"><label for="sEn">Включить расписание</label><input id="sEn" type="checkbox"></div>
+      <div class="row"><label for="sTz">Часовой пояс, часов от UTC</label><input id="sTz" type="number" min="-12" max="14" step="0.25" inputmode="decimal"></div>
+      <div class="row dayrow"><label>Дни недели</label>
+        <span id="sDays"><label><input type="checkbox" data-day="0">Пн</label><label><input type="checkbox" data-day="1">Вт</label><label><input type="checkbox" data-day="2">Ср</label><label><input type="checkbox" data-day="3">Чт</label><label><input type="checkbox" data-day="4">Пт</label><label><input type="checkbox" data-day="5">Сб</label><label><input type="checkbox" data-day="6">Вс</label></span>
+      </div>
+      <div class="row"><label for="sOnT">Включать</label>
+        <select id="sOnT"><option value="0">в заданное время</option><option value="1">на закате</option><option value="2">на рассвете</option></select></div>
+      <div class="row"><label for="sOnTime" id="sOnLabel">Время включения</label><input id="sOnTime" type="time"><input id="sOnOff" type="number" min="-240" max="240" step="5" inputmode="numeric"></div>
+      <div class="row"><label for="sOffT">Выключать</label>
+        <select id="sOffT"><option value="0">в заданное время</option><option value="1">на закате</option><option value="2">на рассвете</option></select></div>
+      <div class="row"><label for="sOffTime" id="sOffLabel">Время выключения</label><input id="sOffTime" type="time"><input id="sOffOff" type="number" min="-240" max="240" step="5" inputmode="numeric"></div>
+      <div id="sGeo">
+        <div class="row"><label for="sLat">Широта, градусов (север +)</label><input id="sLat" type="number" min="-90" max="90" step="0.01" inputmode="decimal"></div>
+        <div class="row"><label for="sLon">Долгота, градусов (восток +)</label><input id="sLon" type="number" min="-180" max="180" step="0.01" inputmode="decimal"></div>
+        <p class="hint">Рассвет и закат считаются по координатам. Возьми их в картах для своего города, например Москва: 55,75 и 37,62.</p>
+      </div>
+      <p class="hint" id="sToday"></p>
+      <p class="hint">Событие срабатывает один раз в свою минуту, а не удерживает состояние: если включить или выключить вручную, так и останется до следующего события. Часовой пояс постоянный: при переходе на летнее время смени его вручную.</p>
     </div>
   </section>
 
