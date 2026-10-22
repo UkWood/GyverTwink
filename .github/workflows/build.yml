@@ -33,13 +33,44 @@ jobs:
         run: pip install platformio
 
       - name: Build
-        run: pio run -e ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }} 2>&1 | tee build.log; test ${PIPESTATUS[0]} -eq 0
 
       - name: Размер прошивки (должна помещаться в раздел OTA, около 1 МБ)
         run: |
           size=$(stat -c%s .pio/build/${{ matrix.env }}/firmware.bin)
           echo "firmware.bin: $size байт"
           test "$size" -lt 921600
+
+      - name: Размеры и ОЗУ (в сводку запуска)
+        run: |
+          limit=921600
+          size=$(stat -c%s .pio/build/${{ matrix.env }}/firmware.bin)
+          ram=$(grep -m1 'RAM:' build.log || true)
+          flash=$(grep -m1 'Flash:' build.log || true)
+          used=$(echo "$ram" | sed -n 's/.*used \([0-9]*\) bytes.*/\1/p')
+          total=$(echo "$ram" | sed -n 's/.*from \([0-9]*\) bytes.*/\1/p')
+          {
+            echo "### ${{ matrix.env }}"
+            echo
+            echo "| Показатель | Значение |"
+            echo "|---|---|"
+            echo "| firmware.bin | $size Б ($((size / 1024)) КБ) |"
+            echo "| Лимит OTA (CI) | $limit Б ($((limit / 1024)) КБ) |"
+            echo "| Запас до лимита | $((limit - size)) Б ($(((limit - size) / 1024)) КБ) |"
+            if [ -n "$used" ] && [ -n "$total" ]; then
+              echo "| Статическая ОЗУ (data+bss) | $used из $total Б ($((used / 1024)) КБ) |"
+              echo "| Остаётся под кучу и стек (оценка) | $((total - used)) Б ($(((total - used) / 1024)) КБ) |"
+            fi
+            echo
+            echo '```'
+            echo "$ram"
+            echo "$flash"
+            sz=$(ls ~/.platformio/packages/toolchain-xtensa*/bin/xtensa-lx106-elf-size 2>/dev/null | head -1)
+            if [ -n "$sz" ]; then
+              "$sz" -A .pio/build/${{ matrix.env }}/firmware.elf | grep -E '^(section|\.(text|data|rodata|bss|irom0\.text))\b' || true
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
