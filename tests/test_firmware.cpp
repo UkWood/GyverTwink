@@ -12,6 +12,11 @@ static void resetAll() {
   pwr = Pwr();
   for (auto& e : effs) e = Effects();
   fxDefaults(effsX);
+  sched = Sched();   // расписание и часы
+  fakeEpoch() = 0;
+  fakeNtpOn() = false;
+  schedNtp = false;
+  schedLastMin = 0;
   memset(xy, 0, sizeof(xy));
   for (auto& l : leds) l = CRGB();
   stripObj = CLEDController();
@@ -38,6 +43,7 @@ static void resetAll() {
   EEcfg = EEManager(cfg);
   EEeff = EEManager(effs);
   EEfx = EEManager(effsX);
+  EEsched = EEManager(sched);
   EExy = EEManager(xy);
   EEmm = EEManager(mm);
   EEpwr = EEManager(pwr);
@@ -582,6 +588,7 @@ TEST(new_effect_cross_fade_from_old_effect) {
 
 #include "test_web_cases.h"
 #include "test_scene_cases.h"
+#include "test_sched_cases.h"
 #include "test_coords_cases.h"
 #include "test_vcalib_cases.h"
 #include "test_ota_cases.h"

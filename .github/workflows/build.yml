@@ -107,7 +107,7 @@ jobs:
       - name: Синтаксис app.js
         run: node --check web/app.js
       - name: Тесты чистых функций страницы
-        run: node --test web/test/geometry.test.mjs web/test/calib.test.mjs
+        run: node --test web/test/geometry.test.mjs web/test/calib.test.mjs web/test/schedule.test.mjs
 
   web-ui:
     runs-on: ubuntu-latest
