@@ -114,6 +114,15 @@ Android: [Google Play](https://play.google.com/store/apps/details?id=ru.alexgyve
 [.apk в Releases](https://github.com/UkWood/GyverTwink/releases/tag/app-v1.7) (версия 1.7, без ACK и поля лимита тока).
 Исходники — [`processing/GyverTwink`](processing/GyverTwink) (Processing; текущая версия 1.9, **APK из исходников пока не пересобран**).
 
+### Сборка APK из исходников
+Исходник один и работает и на ПК, и на Android, но для сборки APK его нужно было править вручную (библиотека Video есть только для ПК и валит Android-сборку).
+Поэтому готовый **Android-вариант лежит в [`processing/GyverTwink_android`](processing/GyverTwink_android)**: его создаёт скрипт `tools/make_android_sketch.py` из `processing/GyverTwink`, править в нём ничего не нужно.
+1. Установи Processing 4 и в менеджере режимов (Mode → Manage Modes) режим **Android**.
+2. Библиотеки (Sketch → Import Library → Add Library): **Ketai**. Библиотеку **UDP** (`hypermedia.net`) скачай вручную с [ubaa.net/shared/processing/udp](http://ubaa.net/shared/processing/udp/) и положи в `Documents/Processing/libraries`. Библиотека Video не нужна.
+3. Открой `processing/GyverTwink_android/GyverTwink_android.pde` (папку целиком, рядом должны лежать остальные файлы, `data` и `AndroidManifest.xml`). Режим скетча — Android (выставляется в файле `code/sketch.properties`).
+4. Телефон с включённой отладкой по USB: Run. Готовый файл: File → Export Signed Package (Processing попросит создать ключ подписи).
+5. Меняешь приложение — правь `processing/GyverTwink`, затем `python3 tools/make_android_sketch.py` и коммить обе папки (CI проверяет, что они согласованы). Режим ПК (`processing/GyverTwink`) по-прежнему открывается как обычный скетч Processing.
+
 1. Телефон должен быть в той же сети, что и гирлянда: в домашней WiFi или в точке `GyverTwink`.
 2. На вкладке настроек (гаечный ключ) значок обновления ищет гирлянды в сети; маска подсети по умолчанию `255.255.255.0`.
    Найденное устройство выбирается в списке *Connection*.
