@@ -65,7 +65,10 @@ jobs:
             echo '```'
             echo "$ram"
             echo "$flash"
-            pio run -e ${{ matrix.env }} -t size 2>&1 | grep -E '^(Section|\.|Total|text|[0-9 ]+\.)|\.(text|data|rodata|bss|irom0\.text)' || true
+            sz=$(ls ~/.platformio/packages/toolchain-xtensa*/bin/xtensa-lx106-elf-size 2>/dev/null | head -1)
+            if [ -n "$sz" ]; then
+              "$sz" -A .pio/build/${{ matrix.env }}/firmware.elf | grep -E '^(section|\.(text|data|rodata|bss|irom0\.text))\b' || true
+            fi
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
