@@ -65,7 +65,7 @@ TEST(web_state_reflects_settings) {
   CHECK_EQ(jnum(r, "offMin"), 33);
   CHECK_EQ(jnum(r, "maxMa"), 2500);
   CHECK_EQ(jnum(r, "cur"), 9);
-  CHECK_EQ(jnum(r, "count"), ACTIVE_PALETTES * 2);
+  CHECK_EQ(jnum(r, "count"), EFFECT_COUNT);
   CHECK(r.body.find("\"fw\":\"host\"") != std::string::npos);
 }
 
@@ -204,6 +204,29 @@ TEST(web_effect_get_and_edit) {
   CHECK_EQ(effs[4].scale, 50);   // соседние эффекты не тронуты
 }
 
+TEST(web_new_effects_use_their_own_settings_block) {
+  resetAll();
+  Resp r = webGet("/api/effect", {{"n", std::to_string(ACTIVE_PALETTES * 2 + 2)}});   // огонь
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(jnum(r, "n"), ACTIVE_PALETTES * 2 + 2);
+  CHECK_EQ(jnum(r, "fav"), 0);   // новые эффекты по умолчанию не в избранном
+  CHECK_EQ(jnum(r, "scale"), effsX[2].scale);
+  CHECK_EQ(jnum(r, "speed"), effsX[2].speed);
+
+  Effects before[ACTIVE_PALETTES * 2];
+  memcpy(before, effs, sizeof(effs));
+  r = webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT - 1)}, {"fav", "1"}, {"scale", "123"}, {"speed", "45"}, {"show", "1"}});
+  CHECK_EQ(r.code, 200);
+  CHECK(effsX[EXT_EFFECTS - 1].fav);
+  CHECK_EQ(effsX[EXT_EFFECTS - 1].scale, 123);
+  CHECK_EQ(effsX[EXT_EFFECTS - 1].speed, 45);
+  CHECK_EQ(forceEff, EFFECT_COUNT - 1);
+  CHECK(EEfx.updates > 0);
+  CHECK_EQ(EEeff.updates, 0);                        // блок старых эффектов не записывался
+  CHECK(memcmp(before, effs, sizeof(effs)) == 0);
+  CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
+}
+
 TEST(web_effect_show_forces_the_effect) {
   resetAll();
   Resp r = webPost("/api/effect", {{"n", "14"}, {"show", "1"}});
@@ -218,7 +241,7 @@ TEST(web_effect_show_forces_the_effect) {
 
 TEST(web_effect_index_and_values_are_checked) {
   resetAll();
-  const Args bad[] = {{}, {{"n", "22"}}, {{"n", "-1"}}, {{"n", "x"}}, {{"n", "255"}},
+  const Args bad[] = {{}, {{"n", std::to_string(EFFECT_COUNT)}}, {{"n", "-1"}}, {{"n", "x"}}, {{"n", "255"}},
                       {{"n", "1"}, {"scale", "256"}}, {{"n", "1"}, {"speed", "-5"}}, {{"n", "1"}, {"fav", "2"}},
                       {{"n", "1"}, {"show", "7"}}};
   for (auto& a : bad) {

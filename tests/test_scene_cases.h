@@ -17,6 +17,9 @@ static void sceneSetup() {   // типичное "рабочее" состоян
   effs[3].fav = false;
   effs[3].scale = 91;
   effs[3].speed = 17;
+  effsX[4].fav = true;
+  effsX[4].scale = 201;
+  effsX[4].speed = 33;
 }
 
 TEST(scene_name_cleaning) {
@@ -54,6 +57,7 @@ TEST(scene_save_load_roundtrip) {
   pwr.maxMa = 4200;
   curEff = 1;
   for (auto& e : effs) e = Effects();
+  fxDefaults(effsX);
   forceTmr.restart();
 
   r = scenePost("load", {{"slot", "2"}});
@@ -69,7 +73,10 @@ TEST(scene_save_load_roundtrip) {
   CHECK(switchTmr.state());                    // автосмена запущена
   CHECK_EQ(switchTmr._prd, 5 * 60000u);        // с периодом сцены
   CHECK(!forceTmr.state());                    // принудительный показ остановлен
-  CHECK(EEeff.updates > 0);
+  CHECK(EEeff.updates > 0 && EEfx.updates > 0);
+  CHECK(effsX[4].fav);                         // настройки новых эффектов тоже в сцене
+  CHECK_EQ(effsX[4].scale, 201);
+  CHECK_EQ(effsX[4].speed, 33);
   // не входит в сцену: питание, число светодиодов, лимит тока
   CHECK(!cfg.power);
   CHECK_EQ(cfg.ledAm, 77);
@@ -166,10 +173,69 @@ TEST(scene_corrupted_file_means_no_scenes) {
   scenes[1].used = 1;
   scenes[1].prdCh = 1;
   scenes[1].curEff = 200;
-  SceneHeader h = {{'G', 'S'}, 1, SCENE_SLOTS, scenesSum()};
+  SceneHeader h = {{'G', 'S'}, 2, SCENE_SLOTS, scenesSum()};
   std::string evil((const char*)&h, sizeof(h));
   evil.append((const char*)scenes, sizeof(scenes));
   CHECK(!reload(evil));
+}
+
+// файл версии 1 (до новых эффектов) из реальной прошивки 1.3: сцены не теряются, новые эффекты - по умолчанию
+TEST(scene_file_version_1_is_migrated) {
+  resetAll();
+  webReady();
+  SceneV1 old[SCENE_SLOTS];
+  memset(old, 0, sizeof(old));
+  old[2].used = 1;
+  strcpy(old[2].name, "Старая");
+  old[2].bright = 120;
+  old[2].autoCh = 1;
+  old[2].prdCh = 3;
+  old[2].curEff = 17;
+  for (auto& e : old[2].effs) e = Effects();
+  old[2].effs[9].scale = 66;
+  old[2].effs[9].fav = false;
+  uint16_t a = 1, b = 0;
+  fletcherAdd(a, b, (const byte*)old, sizeof(old));
+  SceneHeader h = {{'G', 'S'}, 1, SCENE_SLOTS, (uint16_t)((b << 8) | a)};
+  std::string file((const char*)&h, sizeof(h));
+  file.append((const char*)old, sizeof(old));
+
+  LittleFS.files["/scenes.bin"] = file;
+  scenesLoad();
+  CHECK(scenes[2].used == 1 && std::string(scenes[2].name) == "Старая");
+  CHECK(scenes[2].bright == 120 && scenes[2].autoCh == 1 && scenes[2].prdCh == 3 && scenes[2].curEff == 17);
+  CHECK_EQ(scenes[2].effs[9].scale, 66);
+  CHECK(!scenes[2].effs[9].fav);
+  Effects def[EXT_EFFECTS];
+  fxDefaults(def);
+  CHECK(memcmp(scenes[2].fx, def, sizeof(def)) == 0);   // новые эффекты - значения по умолчанию
+  CHECK_EQ(scenes[0].used, 0);
+
+  CHECK(sceneLoad(2));   // сцену можно применить
+  CHECK_EQ(curEff, 17);
+  CHECK_EQ(effs[9].scale, 66);
+
+  // испорченный файл версии 1 - сцен нет
+  std::string bad = file;
+  bad[sizeof(SceneHeader) + 5] ^= 0x40;
+  LittleFS.files["/scenes.bin"] = bad;
+  scenesLoad();
+  CHECK_EQ(scenes[2].used, 0);
+  LittleFS.files["/scenes.bin"] = file.substr(0, file.size() - 3);   // обрезан
+  scenesLoad();
+  CHECK_EQ(scenes[2].used, 0);
+
+  // после следующей записи файл становится версией 2 и читается снова
+  LittleFS.files["/scenes.bin"] = file;
+  scenesLoad();
+  sceneSetup();
+  CHECK(sceneSave(5, "Новая"));
+  CHECK_EQ(LittleFS.files["/scenes.bin"].size(), sizeof(SceneHeader) + sizeof(scenes));
+  CHECK_EQ((int)LittleFS.files["/scenes.bin"][2], 2);
+  memset(scenes, 0, sizeof(scenes));
+  scenesLoad();
+  CHECK(scenes[2].used == 1 && scenes[5].used == 1);
+  CHECK_EQ(scenes[5].fx[4].scale, 201);
 }
 
 TEST(scene_write_failure_keeps_previous_state) {

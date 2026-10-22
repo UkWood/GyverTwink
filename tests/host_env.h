@@ -25,7 +25,8 @@ byte xy[LED_MAX][2];
 MM mm;
 Pwr pwr;
 Effects effs[ACTIVE_PALETTES * 2];
-EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs);
+Effects effsX[EXT_EFFECTS];
+EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
 // порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
 EncButtonStub btn;

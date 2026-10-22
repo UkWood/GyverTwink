@@ -11,6 +11,7 @@ static void resetAll() {
   mm = MM();
   pwr = Pwr();
   for (auto& e : effs) e = Effects();
+  fxDefaults(effsX);
   memset(xy, 0, sizeof(xy));
   for (auto& l : leds) l = CRGB();
   stripObj = CLEDController();
@@ -36,6 +37,7 @@ static void resetAll() {
   curEff = forceEff = 0;
   EEcfg = EEManager(cfg);
   EEeff = EEManager(effs);
+  EEfx = EEManager(effsX);
   EExy = EEManager(xy);
   EEmm = EEManager(mm);
   EEpwr = EEManager(pwr);
@@ -223,10 +225,31 @@ TEST(effect_index_is_checked) {
   resetAll();
   forceEff = 3;
   udp.out.clear();
-  send({4, 0, ACTIVE_PALETTES * 2});   // нет такого эффекта
+  send({4, 0, EFFECT_COUNT});   // нет такого эффекта
   send({4, 0, 255});
   CHECK_EQ(forceEff, 3);
   CHECK(udp.out.empty());
+  send({4, 0, EFFECT_COUNT - 1});   // последний новый эффект есть
+  CHECK_EQ(forceEff, EFFECT_COUNT - 1);
+}
+
+TEST(new_effect_settings_go_to_their_own_block) {
+  resetAll();
+  Effects before[ACTIVE_PALETTES * 2];
+  memcpy(before, effs, sizeof(effs));
+  send({4, 0, ACTIVE_PALETTES * 2 + 2});   // огонь
+  CHECK_EQ(forceEff, ACTIVE_PALETTES * 2 + 2);
+  Bytes r = lastOut();   // ответ с настройками нового эффекта
+  CHECK_EQ(r.size(), 6);
+  CHECK(r[2] == 4 && r[3] == 0 && r[4] == effsX[2].scale && r[5] == effsX[2].speed);
+  send({4, 1, 1});
+  send({4, 2, 99});
+  send({4, 3, 77});
+  CHECK(effsX[2].fav);
+  CHECK_EQ(effsX[2].scale, 99);
+  CHECK_EQ(effsX[2].speed, 77);
+  CHECK(EEfx.updates > 0);
+  CHECK(memcmp(before, effs, sizeof(effs)) == 0);   // блок старых эффектов не тронут
 }
 
 // ================= расширения протокола =================
@@ -379,6 +402,28 @@ TEST(switch_random_picks_only_favorites) {
   CHECK(saw4 && saw15);
 }
 
+TEST(switch_includes_new_effects_only_when_favorite) {
+  resetAll();
+  for (auto& e : effs) e.fav = false;   // новые по умолчанию не избранные
+  effs[3].fav = true;
+  for (int i = 0; i < 40; i++) {
+    switchEff();
+    CHECK_EQ(curEff, 3);   // новые эффекты в обход не попадают
+  }
+  effsX[1].fav = true;   // бегущие огни
+  curEff = 3;
+  switchEff();
+  CHECK_EQ(curEff, ACTIVE_PALETTES * 2 + 1);
+  switchEff();
+  CHECK_EQ(curEff, 3);   // после последнего - круг сначала
+  for (auto& e : effs) e.fav = false;
+  cfg.rndCh = 1;
+  for (int i = 0; i < 30; i++) {
+    switchEff();
+    CHECK_EQ(curEff, ACTIVE_PALETTES * 2 + 1);   // случайный порядок тоже находит избранный новый
+  }
+}
+
 // ================= ограничение тока =================
 TEST(power_limit_off_keeps_brightness) {
   resetAll();
@@ -443,6 +488,96 @@ TEST(effects_respect_led_amount_and_limit) {
   pwr.maxMa = 30;                         // очень мало: яркость должна упасть
   runEffect(1);
   CHECK(stripObj.shown.back() < 200);
+}
+
+// ---- новые эффекты ----
+static const int NEW0 = ACTIVE_PALETTES * 2;
+
+// вертикальная гирлянда: светодиод 0 вверху (Y мал), последний внизу (Y велик, ось Y направлена вниз как в кадре камеры)
+static void lineUp(int n) {
+  cfg.ledAm = n;
+  for (int i = 0; i < n; i++) {
+    xy[i][0] = 100 + (i % 7);
+    xy[i][1] = i * 200 / (n - 1);
+  }
+  recalcBounds();
+}
+
+static int sumRgb(int a, int b) {
+  int s = 0;
+  for (int i = a; i < b; i++) s += leds[i].r + leds[i].g + leds[i].b;
+  return s;
+}
+
+TEST(new_effects_render_inside_the_strip_and_stay_alive) {
+  resetAll();
+  lineUp(100);
+  leds[100] = CRGB(9, 8, 7);   // за пределами ledAm
+  for (int e = 0; e < EXT_EFFECTS; e++) {
+    for (auto& l : leds) l = CRGB();
+    leds[100] = CRGB(9, 8, 7);
+    size_t before = stripObj.shown.size();
+    for (int f = 0; f < 120; f++) runEffect(NEW0 + e);   // 120 кадров: хватит и на искры, и на разгон дыхания
+    CHECK_EQ(stripObj.shown.size(), before + 120);
+    CHECK(leds[100] == CRGB(9, 8, 7));                    // ничего за пределами ledAm
+    CHECK(sumRgb(0, 100) > 0);                            // эффект что-то показывает
+  }
+}
+
+TEST(new_effects_survive_zero_size_map_and_extreme_settings) {
+  resetAll();
+  cfg.ledAm = LED_MAX;
+  for (int i = 0; i < LED_MAX; i++) xy[i][0] = xy[i][1] = 77;   // все в одной точке: ширина и высота 0
+  recalcBounds();
+  CHECK(mm.w == 0 && mm.h == 0);
+  const int settings[][2] = {{0, 0}, {255, 255}, {0, 255}, {255, 0}, {128, 128}};
+  for (int e = 0; e < EXT_EFFECTS; e++) {
+    for (auto& s : settings) {
+      effsX[e].scale = s[0];
+      effsX[e].speed = s[1];
+      for (int f = 0; f < 5; f++) runEffect(NEW0 + e);
+    }
+  }
+  CHECK(true);   // главное - без деления на ноль и выхода за массивы (ASan/UBSan)
+}
+
+TEST(fire_is_hotter_at_the_bottom_than_at_the_top) {
+  resetAll();
+  lineUp(300);
+  for (int f = 0; f < 40; f++) runEffect(NEW0 + 2);
+  int top = sumRgb(0, 60), bottom = sumRgb(240, 300);
+  CHECK(bottom > top * 2);
+}
+
+TEST(twinkle_sparks_fade_out_and_scale_controls_density) {
+  resetAll();
+  lineUp(200);
+  effsX[0].scale = 0;   // без новых искр: оставшееся гаснет
+  for (auto& l : leds) l = CRGB(200, 200, 200);
+  for (int f = 0; f < 80; f++) runEffect(NEW0);
+  CHECK_EQ(sumRgb(0, 200), 0);
+
+  auto litAfter = [&](byte scale) {
+    for (auto& l : leds) l = CRGB();
+    effsX[0].scale = scale;
+    effsX[0].speed = 150;
+    for (int f = 0; f < 200; f++) runEffect(NEW0);
+    int lit = 0;
+    for (int i = 0; i < 200; i++) lit += leds[i].r + leds[i].g + leds[i].b > 0;
+    return lit;
+  };
+  int few = litAfter(20), many = litAfter(250);
+  CHECK(many > few);
+  CHECK(many <= 200);
+}
+
+TEST(new_effect_cross_fade_from_old_effect) {
+  resetAll();
+  lineUp(50);
+  runEffect(1);   // обычный эффект
+  for (int i = 0; i < 50; i++) leds[i] = CRGB(200, 200, 200);
+  runEffect(NEW0 + 3);   // дыхание: на первом кадре цвет ещё близок к прежнему, а не рывок в тёмное
+  CHECK(leds[10].r > 150 && leds[10].r < 200);
 }
 
 #include "test_web_cases.h"

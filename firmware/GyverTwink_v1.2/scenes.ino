@@ -1,6 +1,7 @@
 // Сцены (пресеты): набор настроек, который можно сохранить и вернуть одним нажатием.
 // Хранятся в LittleFS одним файлом /scenes.bin: заголовок + SCENE_SLOTS записей фиксированного размера.
-// В сцену входят яркость, автосмена, случайный порядок, период, текущий эффект и настройки всех 22 эффектов.
+// В сцену входят яркость, автосмена, случайный порядок, период, текущий эффект и настройки всех эффектов (EFFECT_COUNT).
+// Формат файла: версия 2 (с новыми эффектами). Файл версии 1 (22 эффекта) читается и переводится в версию 2 при следующей записи.
 // Питание, число светодиодов и лимит тока - свойства установки, а не сцены: они не сохраняются и не меняются.
 
 #define SCENE_FILE "/scenes.bin"
@@ -8,20 +9,48 @@
 
 Scene scenes[SCENE_SLOTS];
 
-static uint16_t scenesSum() {
-  const byte* p = (const byte*)scenes;
-  uint16_t a = 1, b = 0;   // Fletcher-16
-  for (size_t i = 0; i < sizeof(scenes); i++) {
+// контрольная сумма Fletcher-16, считается по частям (a и b - накопители, начальное значение a = 1, b = 0)
+static void fletcherAdd(uint16_t& a, uint16_t& b, const byte* p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
     a = (a + p[i]) % 255;
     b = (b + a) % 255;
   }
+}
+
+static uint16_t scenesSum() {
+  uint16_t a = 1, b = 0;
+  fletcherAdd(a, b, (const byte*)scenes, sizeof(scenes));
   return (b << 8) | a;
 }
 
 // допустима ли запись из файла
 static bool sceneValid(const Scene& s) {
   if (s.used == 0) return true;
-  return s.used == 1 && s.curEff < ACTIVE_PALETTES * 2 && s.prdCh >= 1;
+  return s.used == 1 && s.curEff < EFFECT_COUNT && s.prdCh >= 1;
+}
+
+// чтение файла версии 1: записи без новых эффектов читаются по одной (стек мал), настройки новых - по умолчанию
+static bool scenesLoadV1(File& f, uint16_t sum) {
+  Effects def[EXT_EFFECTS];
+  fxDefaults(def);
+  uint16_t a = 1, b = 0;
+  for (int i = 0; i < SCENE_SLOTS; i++) {
+    SceneV1 o;
+    if (f.read((uint8_t*)&o, sizeof(o)) != sizeof(o)) return false;
+    fletcherAdd(a, b, (const byte*)&o, sizeof(o));
+    Scene& s = scenes[i];
+    memset(&s, 0, sizeof(s));
+    memcpy(s.name, o.name, sizeof(s.name));
+    s.used = o.used;
+    s.bright = o.bright;
+    s.autoCh = o.autoCh;
+    s.rndCh = o.rndCh;
+    s.prdCh = o.prdCh;
+    s.curEff = o.curEff;
+    memcpy(s.effs, o.effs, sizeof(s.effs));
+    memcpy(s.fx, def, sizeof(s.fx));
+  }
+  return sum == (uint16_t)((b << 8) | a);
 }
 
 // чтение файла; любое несоответствие (нет файла, другой размер, неверная сумма, мусор в записях) - сцен нет
@@ -30,9 +59,16 @@ void scenesLoad() {
   File f = LittleFS.open(SCENE_FILE, "r");
   if (!f) return;
   SceneHeader h;
-  bool ok = f.size() == sizeof(SceneHeader) + sizeof(scenes) && f.read((uint8_t*)&h, sizeof(h)) == sizeof(h) &&
-            h.magic[0] == 'G' && h.magic[1] == 'S' && h.version == 1 && h.slots == SCENE_SLOTS &&
-            f.read((uint8_t*)scenes, sizeof(scenes)) == sizeof(scenes) && h.sum == scenesSum();
+  bool ok = f.size() >= sizeof(SceneHeader) && f.read((uint8_t*)&h, sizeof(h)) == sizeof(h) && h.magic[0] == 'G' &&
+            h.magic[1] == 'S' && h.slots == SCENE_SLOTS;
+  if (ok && h.version == 2) {
+    ok = f.size() == sizeof(SceneHeader) + sizeof(scenes) && f.read((uint8_t*)scenes, sizeof(scenes)) == sizeof(scenes) &&
+         h.sum == scenesSum();
+  } else if (ok && h.version == 1) {
+    ok = f.size() == sizeof(SceneHeader) + SCENE_SLOTS * sizeof(SceneV1) && scenesLoadV1(f, h.sum);
+  } else {
+    ok = false;
+  }
   f.close();
   for (int i = 0; ok && i < SCENE_SLOTS; i++) ok = sceneValid(scenes[i]);
   if (!ok) {
@@ -44,7 +80,7 @@ void scenesLoad() {
 
 // запись через временный файл: при сбое питания остаётся прежняя версия
 static bool scenesSave() {
-  SceneHeader h = {{'G', 'S'}, 1, SCENE_SLOTS, scenesSum()};
+  SceneHeader h = {{'G', 'S'}, 2, SCENE_SLOTS, scenesSum()};
   File f = LittleFS.open(SCENE_TMP, "w");
   if (!f) return false;
   bool ok = f.write((const uint8_t*)&h, sizeof(h)) == sizeof(h) &&
@@ -107,8 +143,9 @@ bool sceneSave(byte slot, const char* cleanName) {
   s.autoCh = cfg.autoCh;
   s.rndCh = cfg.rndCh;
   s.prdCh = cfg.prdCh ? cfg.prdCh : 1;
-  s.curEff = curEff < ACTIVE_PALETTES * 2 ? curEff : 0;
+  s.curEff = curEff < EFFECT_COUNT ? curEff : 0;
   memcpy(s.effs, effs, sizeof(effs));
+  memcpy(s.fx, effsX, sizeof(effsX));
   if (scenesSave()) return true;
   scenes[slot] = old;
   return false;
@@ -124,7 +161,9 @@ bool sceneLoad(byte slot) {
   setRandomSwitch(s.rndCh);
   setAutoSwitch(s.autoCh);
   memcpy(effs, s.effs, sizeof(effs));
+  memcpy(effsX, s.fx, sizeof(effsX));
   EEeff.update();
+  EEfx.update();
   curEff = s.curEff;
   return true;
 }

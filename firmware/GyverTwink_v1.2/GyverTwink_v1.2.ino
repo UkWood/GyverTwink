@@ -84,6 +84,10 @@ EEManager EEpwr(pwr);
 Effects effs[ACTIVE_PALETTES * 2];
 EEManager EEeff(effs);
 
+// новые эффекты (с номера ACTIVE_PALETTES * 2): отдельный блок в конце EEPROM, чтобы не сдвигать остальные
+Effects effsX[EXT_EFFECTS];
+EEManager EEfx(effsX);
+
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
@@ -129,6 +133,8 @@ void setup() {
   EEmm.begin(EEeff.nextAddr(), (uint8_t)LED_MAX);
   EExy.begin(EEmm.nextAddr(), (uint8_t)LED_MAX);
   EEpwr.begin(EExy.nextAddr(), 'a');
+  fxDefaults(effsX);   // значения по умолчанию, если блока ещё нет (прочитанный из EEPROM их заменит)
+  EEfx.begin(EEpwr.nextAddr(), 'a');
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
   switchTmr.setPrd(cfg.prdCh * 60000ul);
@@ -149,6 +155,7 @@ void loop() {
   EEcfg.tick();
   EEeff.tick();
   EEpwr.tick();
+  EEfx.tick();
 
   parsing();  // парсим udp
   webTick();  // веб-интерфейс
