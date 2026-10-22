@@ -117,12 +117,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Зеркало пакетов Ubuntu на раннерах иногда отдаёт файлы с паузами по десятки секунд (apt занимал 15+ минут).
+      # Поэтому: у каждой попытки свой тайм-аут и повтор, а ffmpeg и numpy берутся из PyPI (быстрый CDN), без apt.
       - name: Playwright и Chromium
+        timeout-minutes: 12
         run: |
           npm install --prefix tests/web
-          npx --prefix tests/web playwright install --with-deps chromium
+          for i in 1 2 3; do
+            timeout 240 npx --prefix tests/web playwright install --with-deps chromium && break
+            echo "попытка $i не удалась"; test $i -lt 3 || exit 1
+          done
       - name: ffmpeg и numpy (синтетическое видео для теста калибровки)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-numpy
+        timeout-minutes: 5
+        run: |
+          pip install numpy imageio-ffmpeg
+          mkdir -p "$HOME/bin"
+          ln -sf "$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')" "$HOME/bin/ffmpeg"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/ffmpeg" -version | head -1
       - name: Хост-сервер с настоящим кодом прошивки
         run: make -C tests gt_host
       - name: e2e-тест веб-интерфейса
