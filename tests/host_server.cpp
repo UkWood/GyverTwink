@@ -21,6 +21,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   stripObj.setLeds(leds, LED_MAX);
+  fxDefaults(effsX);   // как в setup() прошивки
   webBegin();
   fcntl(0, F_SETFL, fcntl(0, F_GETFL, 0) | O_NONBLOCK);   // команды тестов по stdin (например BUTTON3 - три нажатия кнопки)
   std::string cmdBuf;
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
                   "STATE bright=%d curEff=%d ledAm=%d maxMa=%d power=%d auto=%d rnd=%d period=%d offOn=%d offMin=%d force=%d forceEff=%d "
                   "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d ota=%d",
                   cfg.bright, curEff, cfg.ledAm, pwr.maxMa, cfg.power, cfg.autoCh, cfg.rndCh, cfg.prdCh, cfg.turnOff, cfg.offTmr,
-                  forceTmr.state(), forceEff, effs[forceEff].fav, effs[forceEff].scale, effs[forceEff].speed, calibF, lit, mm.w, mm.h, otaOpen() ? 1 : 0);
+                  forceTmr.state(), forceEff, effAt(forceEff).fav, effAt(forceEff).scale, effAt(forceEff).speed, calibF, lit, mm.w, mm.h, otaOpen() ? 1 : 0);
     if (last != st) {
       last = st;
       std::printf("%s\n", st);

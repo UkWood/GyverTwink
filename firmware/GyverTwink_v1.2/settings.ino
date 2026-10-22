@@ -12,6 +12,12 @@ void settingsChanged() {
   EEcfg.update();
 }
 
+// настройки эффекта n изменены: запись нужного блока EEPROM (у новых эффектов он свой, см. effsX)
+void effSave(byte n) {
+  if (n < ACTIVE_PALETTES * 2) EEeff.update();
+  else EEfx.update();
+}
+
 void setLedAmount(int n) {
   cfg.ledAm = constrain(n, 1, LED_MAX);
   strip->setLeds(leds, cfg.ledAm);

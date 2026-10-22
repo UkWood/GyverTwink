@@ -164,7 +164,7 @@ try {
   console.log('вкладка «Эффекты»');
   await page.click('[data-tab=effects]');
   check(await page.isVisible('#effList'), 'вкладка открылась');
-  check((await page.$$('#effList button')).length === 22, '22 эффекта в списке');
+  check((await page.$$('#effList button')).length === 28, '28 эффектов в списке (22 палитры и 6 новых)');
   check(await page.isHidden('#effEditor'), 'редактор скрыт, пока эффект не выбран');
   await page.click('#eff-7');
   check(await stateIs('force', 1), 'выбор эффекта запускает его показ');
@@ -181,6 +181,23 @@ try {
   check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '50'), 'у эффекта 3 свои значения (масштаб 50)');
   await page.click('#eff-7');
   check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '77'), 'настройки эффекта 7 сохранились');
+
+  console.log('новые эффекты');
+  check((await page.textContent('#effHint')) === '', 'у обычного эффекта подсказки нет');
+  await page.click('#eff-24');   // огонь
+  check(await until(() => state.forceEff === 24), 'новый эффект показывается');
+  check(await until(async () => (await page.textContent('#effName')).startsWith('24.')), 'в редакторе название нового эффекта');
+  check((await page.textContent('#effHint')).includes('Масштаб'), 'у нового эффекта есть подсказка про масштаб и скорость');
+  check(await until(async () => (await page.$eval('#effFav', (e) => e.checked)) === false), 'новый эффект по умолчанию не в избранном');
+  await page.check('#effFav');
+  check(await stateIs('fav', 1), 'новый эффект можно добавить в избранное');
+  await setRange('#effScale', 120);
+  check(await stateIs('scale', 120), 'масштаб нового эффекта 120');
+  await page.click('#eff-7');
+  check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '77'), 'настройки старых эффектов не затронуты');
+  await page.click('#eff-24');
+  check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '120'), 'настройки нового эффекта сохранились');
+  check(await until(async () => (await page.textContent('#effHint')).includes('Масштаб')), 'подсказка вернулась');
 
 
   console.log('вкладка «Сцены»');

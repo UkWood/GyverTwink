@@ -34,6 +34,7 @@ inline std::mt19937& fakeRng() {
   return r;
 }
 inline long random(long a, long b) { return a + (long)(fakeRng()() % (unsigned long)(b - a)); }
+inline long random(long b) { return random(0, b); }
 
 #define constrain(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))
 template <typename A, typename B> inline auto min(A a, B b) -> decltype(a < b ? a : b) { return a < b ? a : b; }

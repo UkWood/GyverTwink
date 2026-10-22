@@ -2,8 +2,8 @@ void switchEff() {
   // поиск favorite эффектов
   // если избранных нет, остаёмся на текущем (иначе цикл не завершится)
   bool anyFav = false;
-  for (byte i = 0; i < ACTIVE_PALETTES * 2; i++) {
-    if (effs[i].fav) {
+  for (byte i = 0; i < EFFECT_COUNT; i++) {
+    if (effAt(i).fav) {
       anyFav = true;
       break;
     }
@@ -11,11 +11,11 @@ void switchEff() {
   if (!anyFav) return;
 
   while (true) {
-    if (cfg.rndCh) curEff = random(0, ACTIVE_PALETTES * 2);
+    if (cfg.rndCh) curEff = random(0, EFFECT_COUNT);
     else {
-      if (++curEff >= ACTIVE_PALETTES * 2) curEff = 0;
+      if (++curEff >= EFFECT_COUNT) curEff = 0;
     }
-    if (effs[curEff].fav) break;
+    if (effAt(curEff).fav) break;
   }
   DEBUG("switch to: ");
   DEBUGLN(curEff);

@@ -46,14 +46,14 @@ static void webSendState() {
            "\"offOn\":%d,\"offMin\":%u,\"maxMa\":%u,\"cur\":%u,\"count\":%d,\"heap\":%u}",
            FW_VERSION, (unsigned)cfg.ledAm, LED_MAX, cfg.power ? 1 : 0, (unsigned)cfg.bright, cfg.autoCh ? 1 : 0,
            cfg.rndCh ? 1 : 0, (unsigned)cfg.prdCh, cfg.turnOff ? 1 : 0, (unsigned)cfg.offTmr, (unsigned)pwr.maxMa,
-           (unsigned)curEff, ACTIVE_PALETTES * 2, (unsigned)ESP.getFreeHeap());
+           (unsigned)curEff, EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
   webJson(200, b);
 }
 
 static void webSendEffect(byte n) {
   char b[100];
-  snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u}", (unsigned)n, effs[n].fav ? 1 : 0,
-           (unsigned)effs[n].scale, (unsigned)effs[n].speed);
+  snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u}", (unsigned)n, effAt(n).fav ? 1 : 0,
+           (unsigned)effAt(n).scale, (unsigned)effAt(n).speed);
   webJson(200, b);
 }
 
@@ -114,7 +114,7 @@ static void handleNext() {
 
 // эффект n из аргумента; false - ответ об ошибке уже отправлен
 static bool webEffectArg(long& n) {
-  if (webArgInt("n", 0, ACTIVE_PALETTES * 2 - 1, n) > 0) return true;
+  if (webArgInt("n", 0, EFFECT_COUNT - 1, n) > 0) return true;
   webError(400, "n");
   return false;
 }
@@ -137,10 +137,10 @@ static void handleEffectPost() {
     webError(400, rf < 0 ? "fav" : rs < 0 ? "scale" : rp < 0 ? "speed" : "show");
     return;
   }
-  if (rf > 0) effs[n].fav = fav;
-  if (rs > 0) effs[n].scale = scale;
-  if (rp > 0) effs[n].speed = speed;
-  if (rf > 0 || rs > 0 || rp > 0) EEeff.update();
+  if (rf > 0) effAt(n).fav = fav;
+  if (rs > 0) effAt(n).scale = scale;
+  if (rp > 0) effAt(n).speed = speed;
+  if (rf > 0 || rs > 0 || rp > 0) effSave(n);
   if (rw > 0 && show) {
     forceEff = n;
     forceTmr.restart();

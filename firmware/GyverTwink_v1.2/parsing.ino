@@ -170,28 +170,28 @@ void handlePacket() {
 
     case 4:   // управление эффектами
       forceTmr.restart();
-      EEeff.update();
+      effSave(forceEff);
       switch (ubuf[3]) {
-        case 0:   // выбор эффекта в дропе
-          if (ubuf[4] >= ACTIVE_PALETTES * 2) {   // нет такого эффекта
+        case 0:   // выбор эффекта в дропе (номера от ACTIVE_PALETTES * 2 - новые эффекты, расширение)
+          if (ubuf[4] >= EFFECT_COUNT) {   // нет такого эффекта
             pktStatus = PKT_INVALID;
             break;
           }
           forceEff = ubuf[4];
           answ[0] = 4;
-          answ[1] = effs[forceEff].fav;
-          answ[2] = effs[forceEff].scale;
-          answ[3] = effs[forceEff].speed;
+          answ[1] = effAt(forceEff).fav;
+          answ[2] = effAt(forceEff).scale;
+          answ[3] = effAt(forceEff).speed;
           reply(answ, 4);
           break;
         case 1:   // флажок избранное
-          effs[forceEff].fav = ubuf[4];
+          effAt(forceEff).fav = ubuf[4];
           break;
         case 2:   // масштаб
-          effs[forceEff].scale = ubuf[4];
+          effAt(forceEff).scale = ubuf[4];
           break;
         case 3:   // скорость
-          effs[forceEff].speed = ubuf[4];
+          effAt(forceEff).speed = ubuf[4];
           break;
       }
       break;
