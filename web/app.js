@@ -413,7 +413,7 @@ function renderScenes() {
     const li = document.createElement('li');
     const name = document.createElement('span');
     name.className = 'name';
-    name.textContent = s.name;
+    name.textContent = s.name + (s.map ? ' · схема ' + s.map : '');
     const apply = document.createElement('button');
     apply.className = 'apply';
     apply.textContent = 'Применить';
@@ -444,7 +444,7 @@ async function loadScenes() {
 
 async function sceneSave(slot, name) {
   try {
-    sceneData = await api.post('/api/scenes/save', { slot, name });
+    sceneData = await api.post('/api/scenes/save', { slot, name, map: $('sceneMap').checked ? 1 : 0 });
     renderScenes();
     toast('Сохранено: ' + name, true);
   } catch (e) {
@@ -456,7 +456,14 @@ async function sceneLoad(s) {
   try {
     st = await api.post('/api/scenes/load', { slot: s.i });
     render(true);
-    toast('Применена сцена «' + s.name + '»', true);
+    if (s.map) {
+      // сцена вернула и схему светодиодов: карта на странице больше не та (правки, не записанные на гирлянду, отбрасываются)
+      coordsClearUnder();
+      await coordsLoad();
+      spiralInfo();
+      hexInfo();
+    }
+    toast('Применена сцена «' + s.name + '»' + (s.map ? ' (схема: ' + s.map + ' светодиодов)' : ''), true);
   } catch (e) {
     toast(e.message);
   }
@@ -558,7 +565,13 @@ function suspiciousPoints(pts, k) {
 }
 
 // ---------- вкладка «Координаты» ----------
-const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set(), under: [] };   // under - контур схемы «соты» (подложка, не записывается)
+const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set(), under: [], underOnBoard: false };   // under - контур схемы «соты» (подложка, не записывается); underOnBoard - карта с этим контуром уже сохранена на гирлянде
+
+// контур относится к конкретной карте: любая другая схема (спираль, калибровка, сцена) его убирает
+function coordsClearUnder() {
+  coords.under = [];
+  coords.underOnBoard = false;
+}
 
 function coordsSetDirty(d) {
   coords.dirty = d;
@@ -713,6 +726,7 @@ async function coordsSave() {
   try {
     const r = await api.post('/api/xy', { n: coords.pts.length }, pointsToHex(coords.pts));
     coords.orig = coords.pts.map((p) => ({ x: p.x, y: p.y }));
+    if (coords.under.length) coords.underOnBoard = true;
     coordsSetDirty(false);
     coordsRefreshInfo();
     toast('Сохранено: размер карты ' + r.w + ' × ' + r.h, true);
@@ -733,6 +747,7 @@ function coordsEdit(i, x, y) {
 async function coordsApplyResult(pts, est) {
   await coordsLoad();   // orig - то, что сейчас на гирлянде
   if (pts.length !== coords.orig.length) throw new Error('Число светодиодов изменилось, повтори калибровку');
+  coordsClearUnder();   // другая схема: контур «сот» больше не подходит
   coords.pts = pts.map((p) => ({ x: p.x, y: p.y }));
   coords.est = new Set(est);
   coords.sel = 0;
@@ -838,31 +853,25 @@ function spiralInfo() {
 // ---------- схема «соты» (файл экспорта из Hex Router Designer) ----------
 const hex = { map: null, layout: null, error: '' };
 
-// пояснение под выбором файла и состояние кнопок
+// пояснение под выбором файла и состояние кнопки
 function hexInfo() {
   const info = $('hxInfo');
   const build = $('hxBuild');
-  const set = $('hxSet');
-  set.hidden = true;
   build.disabled = true;
   if (hex.error) { info.textContent = hex.error; return; }
   if (!hex.map) { info.textContent = 'Файл не выбран.'; return; }
   const m = hex.map;
-  const total = st ? st.ledAm : 0;
   let text = (m.name ? '«' + m.name + '»: ' : '') + m.count + ' светодиодов, габариты ' + m.widthMm + ' × ' + m.heightMm + ' мм, рёбер контура: ' + m.outline.length + '.';
   for (const w of hex.layout.warnings) text += ' ' + w;
-  if (!total) {
-    text += ' Число светодиодов на гирлянде ещё не получено.';
-  } else if (total !== m.count) {
-    text += ' На гирлянде ' + total + ' светодиодов, а в схеме ' + m.count + '.';
-    if (st && m.count <= st.ledMax) {
-      set.hidden = false;
-      set.textContent = 'Поставить на гирлянде ' + m.count + ' светодиодов';
-    } else {
-      text += ' Это больше предела прошивки.';
-    }
+  if (!st) {
+    text += ' Связь с гирляндой ещё не установлена.';
+  } else if (m.count > st.ledMax) {
+    text += ' ВНИМАНИЕ: схеме нужно ' + m.count + ' светодиодов, а прошивка поддерживает не больше ' + st.ledMax + '. Построить такую схему нельзя.';
+  } else if (st.ledAm !== m.count) {
+    text += ' На гирлянде сейчас ' + st.ledAm + ': при построении число светодиодов будет изменено на ' + m.count + ' автоматически.';
+    build.disabled = false;
   } else {
-    text += ' Число совпадает с гирляндой.';
+    text += ' Число светодиодов совпадает с гирляндой.';
     build.disabled = false;
   }
   info.textContent = text;
@@ -872,7 +881,7 @@ async function hexLoadFile(file) {
   hex.map = null;
   hex.layout = null;
   hex.error = '';
-  coords.under = [];
+  coordsClearUnder();
   if (file) {
     let text = '';
     try { text = await file.text(); } catch (e) { hex.error = 'Не удалось прочитать файл.'; }
@@ -882,31 +891,37 @@ async function hexLoadFile(file) {
       else { hex.map = r.map; hex.layout = layoutHexMap(r.map); }
     }
   }
+  if (hex.error) toast(hex.error);
   hexInfo();
+  if (hex.map && st && hex.map.count > st.ledMax) toast('Схема требует ' + hex.map.count + ' светодиодов: больше предела прошивки (' + st.ledMax + ')');
 }
 
 async function hexBuild() {
-  if (!hex.map) return;
+  if (!hex.map || !st) return;
+  const need = hex.map.count;
+  if (need > st.ledMax) { toast('Схема требует ' + need + ' светодиодов: больше предела прошивки (' + st.ledMax + ')'); hexInfo(); return; }
+  const was = st.ledAm;
+  if (was !== need) {
+    await setParams({ ledAm: need });   // число светодиодов берём из файла (ошибку покажет setParams)
+    if (!st || st.ledAm !== need) { hexInfo(); return; }
+  }
   await coordsLoad();   // число светодиодов берём с гирлянды: сохранение требует то же число
-  if (coords.orig.length !== hex.map.count) { toast('Число светодиодов на гирлянде (' + coords.orig.length + ') не совпадает со схемой (' + hex.map.count + ').'); hexInfo(); return; }
+  if (coords.orig.length !== need) { toast('Число светодиодов на гирлянде (' + coords.orig.length + ') не совпадает со схемой (' + need + ').'); hexInfo(); return; }
   coords.pts = hex.layout.pts.map((p) => ({ x: p.x, y: p.y }));
   coords.under = hex.layout.outline;
+  coords.underOnBoard = false;
   coords.est = new Set();
   coords.sel = 0;
   coordsSetDirty(true);
   coordsSync();
   coordsLedLight();
-  toast('Схема построена: ' + hex.map.count + ' светодиодов. Проверь карту и нажми «Сохранить на гирлянду»', true);
+  hexInfo();
+  toast('Схема построена: ' + need + ' светодиодов' + (was !== need ? ' (число светодиодов на гирлянде изменено: ' + was + ' → ' + need + ')' : '') + '. Проверь карту и нажми «Сохранить на гирлянду»', true);
 }
 
 function initHex() {
   $('hxFile').addEventListener('change', () => hexLoadFile($('hxFile').files[0] || null));
   $('hxBuild').addEventListener('click', hexBuild);
-  $('hxSet').addEventListener('click', async () => {
-    if (!hex.map) return;
-    await setParams({ ledAm: hex.map.count });
-    hexInfo();
-  });
   $('hxOutline').addEventListener('change', coordsDraw);
   hexInfo();
 }
@@ -917,6 +932,7 @@ async function spiralBuild() {
   const r = spiralLayout(counts, coords.orig.length, gap);
   if (r.error) { toast(r.error); spiralInfo(); return; }
   try { localStorage.setItem(SPIRAL_KEY, JSON.stringify({ counts: spiral.counts, gap: $('spGap').value })); } catch (e) { /* не страшно */ }
+  coordsClearUnder();   // другая схема: контур «сот» больше не подходит
   coords.pts = r.pts.map((p) => ({ x: p.x, y: p.y }));
   coords.est = new Set();
   coords.sel = 0;
@@ -928,6 +944,9 @@ async function spiralBuild() {
 
 function spiralFlip() {
   if (!coords.pts.length) { toast('Карта пока пустая'); return; }
+  let lo = 255, hi = 0;
+  for (const p of coords.pts) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); }
+  if (coords.under.length) coords.under = flipOutline(coords.under, lo, hi);   // контур зеркалится вместе с точками
   coords.pts = flipVertical(coords.pts);
   coords.est = new Set(coords.est);
   coordsSetDirty(true);
@@ -1001,6 +1020,7 @@ function initCoords() {
   $('cLine').addEventListener('change', coordsDraw);
   $('cSave').addEventListener('click', coordsSave);
   $('cUndo').addEventListener('click', () => {
+    if (!coords.underOnBoard) coordsClearUnder();   // на гирлянде другая карта: контур несохранённой схемы к ней не относится
     coords.pts = coords.orig.map((p) => ({ x: p.x, y: p.y }));
     coords.est = new Set();
     coordsSetDirty(false);

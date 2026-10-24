@@ -229,7 +229,7 @@ TEST(scene_file_version_1_is_migrated) {
   LittleFS.files["/scenes.bin"] = file;
   scenesLoad();
   sceneSetup();
-  CHECK(sceneSave(5, "Новая"));
+  CHECK(sceneSave(5, "Новая", false));
   CHECK_EQ(LittleFS.files["/scenes.bin"].size(), sizeof(SceneHeader) + sizeof(scenes));
   CHECK_EQ((int)LittleFS.files["/scenes.bin"][2], 2);
   memset(scenes, 0, sizeof(scenes));
@@ -296,6 +296,193 @@ TEST(scene_load_does_not_trust_a_slot_it_cannot_apply) {
   webReady();
   CHECK(!sceneLoad(200));
   CHECK(!sceneLoad(0));   // пустой слот
-  CHECK(!sceneSave(200, "x"));
+  CHECK(!sceneSave(200, "x", false));
   CHECK(!sceneDelete(200));
+}
+
+// ---- схема светодиодов и «Огонь v2» в сцене (файл дополнений /x<слот>.bin) ----
+static void sceneMapSetup(int n) {
+  cfg.ledAm = n;
+  for (int i = 0; i < LED_MAX; i++) {
+    xy[i][0] = (i * 7 + 3) & 255;
+    xy[i][1] = (i * 13 + 5) & 255;
+  }
+  recalcBounds();
+  fire2.shape = 11;
+  fire2.col[3][0] = 9;
+  fire2.col[3][1] = 8;
+  fire2.col[3][2] = 7;
+}
+
+TEST(scene_with_map_restores_led_count_coordinates_and_fire2) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(300);
+  MM mmSaved = mm;
+  Resp r = scenePost("save", {{"slot", "2"}, {"name", "Соты"}, {"map", "1"}});
+  CHECK_EQ(r.code, 200);
+  CHECK(r.body.find("{\"i\":2,\"name\":\"Соты\",\"map\":300}") != std::string::npos);
+  CHECK(LittleFS.exists("/x2.bin") && !LittleFS.exists("/x2.tmp"));
+  CHECK(webGet("/api/scenes").body.find("\"map\":300") != std::string::npos);
+
+  // всё меняем: число светодиодов, координаты, границы, огонь v2
+  cfg.ledAm = 50;
+  for (int i = 0; i < LED_MAX; i++) xy[i][0] = xy[i][1] = 1;
+  recalcBounds();
+  fire2 = Fire2();
+  EExy.nows = EEmm.nows = EEfire2.updates = 0;
+  stripObj.setLeds(leds, 50);
+
+  r = scenePost("load", {{"slot", "2"}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(cfg.ledAm, 300);
+  CHECK_EQ(stripObj.count, 300);
+  bool same = true;
+  for (int i = 0; i < 300; i++) same = same && xy[i][0] == ((i * 7 + 3) & 255) && xy[i][1] == ((i * 13 + 5) & 255);
+  CHECK(same);
+  CHECK(mm.w == mmSaved.w && mm.h == mmSaved.h && mm.minX == mmSaved.minX && mm.maxY == mmSaved.maxY);   // границы пересчитаны
+  CHECK(EExy.nows > 0 && EEmm.nows > 0);   // координаты записаны в EEPROM
+  CHECK_EQ(jnum(r, "ledAm"), 300);          // ответ - новое состояние
+  CHECK_EQ(fire2.shape, 11);                // «Огонь v2» тоже вернулся
+  CHECK(fire2.col[3][0] == 9 && fire2.col[3][1] == 8 && fire2.col[3][2] == 7);
+  CHECK(EEfire2.updates > 0);
+}
+
+TEST(scene_without_map_keeps_the_map_but_restores_fire2) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(120);
+  CHECK_EQ(scenePost("save", {{"slot", "1"}, {"name", "Без схемы"}}).code, 200);   // map не задан
+  Resp l = webGet("/api/scenes");
+  CHECK(l.body.find("\"map\"") == std::string::npos);
+  CHECK(LittleFS.exists("/x1.bin"));   // настройки огня v2 сохранены всегда
+  cfg.ledAm = 77;
+  xy[0][0] = 200;
+  fire2.shape = 99;
+  CHECK_EQ(scenePost("load", {{"slot", "1"}}).code, 200);
+  CHECK_EQ(cfg.ledAm, 77);      // число светодиодов и координаты не тронуты
+  CHECK_EQ(xy[0][0], 200);
+  CHECK_EQ(fire2.shape, 11);    // огонь v2 вернулся
+  CHECK_EQ(scenePost("save", {{"slot", "1"}, {"name", "Нулевой"}, {"map", "0"}}).code, 200);   // явный 0 - то же самое
+  CHECK(webGet("/api/scenes").body.find("\"map\"") == std::string::npos);
+}
+
+TEST(scene_overwrite_and_delete_replace_and_remove_the_map) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(200);
+  scenePost("save", {{"slot", "3"}, {"name", "Схема"}, {"map", "1"}});
+  CHECK(webGet("/api/scenes").body.find("\"map\":200") != std::string::npos);
+  cfg.ledAm = 90;
+  scenePost("save", {{"slot", "3"}, {"name", "Схема"}, {"map", "1"}});   // перезапись с другой схемой
+  CHECK(webGet("/api/scenes").body.find("\"map\":90") != std::string::npos);
+  scenePost("save", {{"slot", "3"}, {"name", "Схема"}});                 // перезапись без схемы
+  CHECK(webGet("/api/scenes").body.find("\"map\"") == std::string::npos);
+  cfg.ledAm = 40;
+  scenePost("load", {{"slot", "3"}});
+  CHECK_EQ(cfg.ledAm, 40);   // схемы в сцене больше нет
+  scenePost("save", {{"slot", "3"}, {"name", "Схема"}, {"map", "1"}});
+  CHECK(LittleFS.exists("/x3.bin"));
+  CHECK_EQ(scenePost("delete", {{"slot", "3"}}).code, 200);
+  CHECK(!LittleFS.exists("/x3.bin") && !LittleFS.exists("/x3.tmp"));
+  CHECK(webGet("/api/scenes").body.find("\"map\"") == std::string::npos);
+}
+
+TEST(scene_map_survives_reboot_and_strays_are_removed) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(150);
+  scenePost("save", {{"slot", "5"}, {"name", "Ночь"}, {"map", "1"}});
+  LittleFS.files["/x6.bin"] = "лишний файл дополнений пустого слота";
+  memset(scenes, 0, sizeof(scenes));
+  memset(sceneMapN, 0, sizeof(sceneMapN));   // перезагрузка: оперативная память пуста
+  scenesLoad();
+  CHECK_EQ(sceneMapN[5], 150);
+  CHECK(webGet("/api/scenes").body.find("\"map\":150") != std::string::npos);
+  CHECK(!LittleFS.exists("/x6.bin"));   // файл пустого слота удалён
+  cfg.ledAm = 10;
+  CHECK(sceneLoad(5));
+  CHECK_EQ(cfg.ledAm, 150);
+}
+
+TEST(scene_damaged_extras_are_ignored_but_the_scene_still_loads) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(100);
+  scenePost("save", {{"slot", "0"}, {"name", "Сцена"}, {"map", "1"}});
+  const std::string good = LittleFS.files["/x0.bin"];
+  std::string bad[6] = {good, good, good, good, good, good};
+  bad[0][bad[0].size() - 5] ^= 0x40;                     // испорчен байт координат: контрольная сумма
+  bad[1].resize(good.size() - 3);                        // файл обрезан
+  bad[2] += "лишнее";                                    // лишние байты в конце
+  bad[3][0] = 'Z';                                       // чужая метка
+  bad[4][2] = 9;                                         // другая версия формата
+  bad[5][6] = (char)0xFF; bad[5][7] = (char)0xFF;        // число светодиодов 65535 больше предела
+  for (auto& b : bad) {
+    LittleFS.files["/x0.bin"] = b;
+    memset(sceneMapN, 0, sizeof(sceneMapN));
+    cfg.bright = 1;
+    cfg.ledAm = 20;
+    xy[0][0] = 250;
+    fire2.shape = 99;
+    CHECK(sceneLoad(0));
+    CHECK_EQ(cfg.bright, 150);     // основные настройки сцены применились
+    CHECK_EQ(cfg.ledAm, 20);       // схема из испорченного файла - нет
+    CHECK_EQ(xy[0][0], 250);
+    CHECK_EQ(fire2.shape, 99);     // и огонь v2 тоже не тронут
+  }
+  scenesLoad();
+  CHECK_EQ(sceneMapN[0], 0);       // кэш числа светодиодов после проверки заголовка: у испорченных файлов схемы нет
+}
+
+TEST(scene_map_write_failure_keeps_the_previous_scene) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(100);
+  scenePost("save", {{"slot", "4"}, {"name", "Старая"}, {"map", "1"}});
+  const std::string extrasBefore = LittleFS.files["/x4.bin"];
+  const std::string scenesBefore = LittleFS.files["/scenes.bin"];
+  cfg.ledAm = 60;
+  LittleFS.failWrites = true;
+  CHECK_EQ(scenePost("save", {{"slot", "4"}, {"name", "Новая"}, {"map", "1"}}).code, 500);
+  LittleFS.failWrites = false;
+  CHECK(LittleFS.files["/x4.bin"] == extrasBefore);       // прежняя схема на месте
+  CHECK(LittleFS.files["/scenes.bin"] == scenesBefore);
+  CHECK(!LittleFS.exists("/x4.tmp"));
+  CHECK_EQ(sceneMapN[4], 100);
+  CHECK(std::string(scenes[4].name) == "Старая");
+}
+
+TEST(scene_with_full_thousand_leds_map) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  sceneMapSetup(LED_MAX);
+  CHECK_EQ(scenePost("save", {{"slot", "7"}, {"name", "Тысяча"}, {"map", "1"}}).code, 200);
+  CHECK(webGet("/api/scenes").body.find("\"map\":1000") != std::string::npos);
+  cfg.ledAm = 10;
+  for (int i = 0; i < LED_MAX; i++) xy[i][0] = xy[i][1] = 0;
+  CHECK_EQ(scenePost("load", {{"slot", "7"}}).code, 200);
+  CHECK_EQ(cfg.ledAm, LED_MAX);
+  CHECK(xy[LED_MAX - 1][0] == ((LED_MAX - 1) * 7 + 3 & 255) && xy[LED_MAX - 1][1] == ((LED_MAX - 1) * 13 + 5 & 255));
+  CHECK(EExyHi.nows > 0);   // координаты после 500-го записаны во второй блок EEPROM
+  CHECK(webGet("/api/scenes").body.size() < 640);
+}
+
+TEST(scene_save_map_argument_is_checked) {
+  resetAll();
+  webReady();
+  sceneSetup();
+  for (const char* bad : {"2", "-1", "x", ""}) {
+    Resp r = scenePost("save", {{"slot", "0"}, {"name", "A"}, {"map", bad}});
+    CHECK_EQ(r.code, 400);
+    CHECK(r.body.find("\"error\":\"map\"") != std::string::npos);
+  }
+  CHECK(LittleFS.files.empty());   // ничего не записано
 }

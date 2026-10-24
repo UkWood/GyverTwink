@@ -367,12 +367,13 @@ static void handleEffectPost() {
 
 // ---------- сцены ----------
 static void webSendScenes() {
-  char b[480];   // худший случай (8 имён по 16 байт) - около 300; стек ESP8266 мал, лишнего не берём
+  char b[640];   // худший случай (8 имён по 16 байт со схемами) - около 450; стек ESP8266 мал, лишнего не берём
   int n = snprintf(b, sizeof(b), "{\"max\":%d,\"scenes\":[", SCENE_SLOTS);
   bool first = true;
   for (int i = 0; i < SCENE_SLOTS && n < (int)sizeof(b) - 60; i++) {
     if (scenes[i].used != 1) continue;
-    n += snprintf(b + n, sizeof(b) - n, "%s{\"i\":%d,\"name\":\"%s\"}", first ? "" : ",", i, scenes[i].name);
+    if (sceneMapN[i]) n += snprintf(b + n, sizeof(b) - n, "%s{\"i\":%d,\"name\":\"%s\",\"map\":%u}", first ? "" : ",", i, scenes[i].name, (unsigned)sceneMapN[i]);
+    else n += snprintf(b + n, sizeof(b) - n, "%s{\"i\":%d,\"name\":\"%s\"}", first ? "" : ",", i, scenes[i].name);
     first = false;
   }
   snprintf(b + n, sizeof(b) - n, "]}");
@@ -390,17 +391,21 @@ static void handleScenesGet() {
   webSendScenes();
 }
 
-// POST /api/scenes/save: slot и name - сохранить текущие настройки
+// POST /api/scenes/save: slot и name - сохранить текущие настройки; map=1 - ещё и схему светодиодов (число и координаты)
 static void handleSceneSave() {
   if (!webAllowed()) return;
-  long slot;
+  long slot, withMap = 0;
   if (!webSlotArg(slot)) return;
+  if (webArgInt("map", 0, 1, withMap) < 0) {
+    webError(400, "map");
+    return;
+  }
   char name[SCENE_NAME_LEN + 1];
   if (!webServer.hasArg("name") || sceneCleanName(webServer.arg("name").c_str(), name) < 0) {
     webError(400, "name");
     return;
   }
-  if (!sceneSave(slot, name)) {
+  if (!sceneSave(slot, name, withMap == 1)) {
     webError(500, "fs");
     return;
   }

@@ -125,3 +125,12 @@ test('отрицательные и дробные координаты сдви
   assert.deepEqual(L.pts[1], { x: 248, y: 176 });
   assert.ok(L.pts.every((p) => p.x >= 0 && p.x <= 255 && p.y >= 0 && p.y <= 255));
 });
+
+test('flipOutline зеркалит Y контура по той же оси, что и точки, и не трогает X', () => {
+  const o = [[1, 10, 2, 20], [3, 30.5, 4, 40.5]];
+  const f = hm.flipOutline(o, 10, 40);
+  assert.deepEqual(f, [[1, 40, 2, 30], [3, 19.5, 4, 9.5]]);
+  assert.deepEqual(hm.flipOutline(f, 10, 40), o);   // двойное зеркало возвращает исходное
+  assert.deepEqual(o[0], [1, 10, 2, 20]);           // исходное не изменено
+  assert.deepEqual(hm.flipOutline([], 0, 255), []);
+});
