@@ -722,7 +722,15 @@ inline CRGB ColorFromPalette(const CRGBPalette16&, uint8_t idx, uint8_t, TBlendT
 inline CRGB blend(const CRGB& a, const CRGB& b, uint8_t amt) {
   return CRGB(a.r + ((b.r - a.r) * amt) / 256, a.g + ((b.g - a.g) * amt) / 256, a.b + ((b.b - a.b) * amt) / 256);
 }
-inline uint8_t inoise8(uint16_t x, uint16_t y, uint16_t z) { return (uint8_t)(x * 31 + y * 17 + z * 7); }
+// хук для тестов: видит каждый вызов шума (какие координаты запрашивает эффект)
+inline std::function<void(uint16_t, uint16_t, uint16_t)>& noiseHook() {
+  static std::function<void(uint16_t, uint16_t, uint16_t)> h;
+  return h;
+}
+inline uint8_t inoise8(uint16_t x, uint16_t y, uint16_t z) {
+  if (noiseHook()) noiseHook()(x, y, z);
+  return (uint8_t)(x * 31 + y * 17 + z * 7);
+}
 
 // Модель мощности из FastLED (power_mgt.cpp, константы те же в 3.4.0 и 3.5.0): R 80 мВт, G 55 мВт, B 75 мВт, 5 мВт на выключенный светодиод
 inline uint32_t calculate_unscaled_power_mW(const CRGB* leds, uint16_t n) {
