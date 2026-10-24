@@ -404,6 +404,57 @@ try {
   check(await until(async () => (await page.textContent('#toast')).includes('Число светодиодов изменилось')), 'число светодиодов изменилось: сохранение отклонено с понятным сообщением');
   await udpSend([2, 0, 1, 20]);   // вернуть 120
   await until(() => state.ledAm === 120);
+
+  console.log('схема «спираль»');
+  check(await page.isVisible('#spiralCard') && await page.isDisabled('#spBuild'), 'карточка схемы есть, строить пока нечего (поле N1 пусто)');
+  check((await page.$eval('#spGap', (e) => e.value)) === '3', 'расстояние между рядами по умолчанию 3 (ряды разведены для удобной правки)');
+  for (let i = 0; i < 3; i++) await page.click('#spAdd');
+  const spVals = [30, 28, 26, 24];
+  for (let i = 0; i < 4; i++) await page.fill('#spN' + (i + 1), String(spVals[i]));
+  check((await page.$$('#spRows input')).length === 4, 'четыре поля N1…N4');
+  check(await until(async () => (await page.textContent('#spInfo')).includes('последний ряд — остаток: 12')), 'подсказка: остаток 120 − 108 = 12 светодиодов в верхнем ряду');
+  check(await page.isEnabled('#spBuild'), 'схему можно строить');
+  await page.fill('#spN4', '60');   // 30 + 28 + 26 + 60 = 144 > 120
+  check(await until(async () => (await page.textContent('#spInfo')).includes('больше числа светодиодов')) && await page.isDisabled('#spBuild'), 'сумма рядов больше S: понятная ошибка, построить нельзя');
+  await page.fill('#spN4', '24');
+  check(await until(async () => await page.isEnabled('#spBuild')), 'после исправления снова можно строить');
+  await page.click('#spBuild');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'схема попала на карту как несохранённая правка');
+  check(await page.isEnabled('#cSave') && await page.isEnabled('#cUndo'), 'сохранить и отменить доступны');
+  await page.click('#cUndo');
+  check(await until(async () => !(await page.textContent('#cInfo')).includes('несохранённые')), 'схему можно отменить, как любую правку');
+  await page.click('#spBuild');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'построена заново');
+  await page.click('#cSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'схема сохранена на гирлянду');
+  r = await api('GET', '/api/xy');
+  const spPts = Array.from({ length: 120 }, (_, i) => ({ x: parseInt(r.json.xy.substr(i * 4, 2), 16), y: parseInt(r.json.xy.substr(i * 4 + 2, 2), 16) }));
+  const spRows = [30, 28, 26, 24, 12];
+  let off = 0;
+  const spYs = [];
+  let spOk = true;
+  const spWidths = [];
+  for (const n of spRows) {
+    const row = spPts.slice(off, off + n);
+    off += n;
+    const sameY = new Set(row.map((q) => q.y)).size === 1;
+    const centred = Math.abs(row.reduce((a, q) => a + q.x, 0) / n - 127.5) <= 0.6;
+    const ordered = row.every((q, i) => i === 0 || q.x > row[i - 1].x);
+    spOk = spOk && sameY && centred && ordered;
+    spYs.push(row[0].y);
+    spWidths.push(row[n - 1].x - row[0].x);
+  }
+  check(spOk, 'на гирлянде 5 рядов по 30, 28, 26, 24 и 12: каждый на своей высоте, по центру, слева направо');
+  check(spYs.every((y, i) => i === 0 || y < spYs[i - 1]), 'ряды идут снизу вверх (нижний - с наибольшим Y)');
+  const spPitch = spWidths[0] / 29;
+  check(Math.abs((spYs[0] - spYs[1]) / spPitch - 3) < 0.3, 'расстояние между рядами втрое больше шага по ряду (' + ((spYs[0] - spYs[1]) / spPitch).toFixed(2) + ')');
+  check(spWidths.every((w, i) => i === 0 || w <= spWidths[i - 1] + 1), 'конус: верхние ряды не шире нижних (ширины ' + spWidths.join(', ') + ')');
+  check(await stateIs('mmw', Math.max(...spPts.map((q) => q.x)) - Math.min(...spPts.map((q) => q.x))), 'границы карты пересчитаны по новой схеме');
+  await page.reload();
+  await page.click('[data-tab=coords]');
+  check(await until(async () => (await page.$eval('#spN1', (e) => e.value)) === '30' && (await page.$eval('#spN4', (e) => e.value)) === '24'), 'введённые ряды запомнены в браузере');
+  check(await fitsScreen(), 'вкладка «Координаты» со схемой помещается по ширине экрана 390 px');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_spiral.png'), fullPage: true });
   await page.click('[data-tab=control]');
   check(await stateIs('calib', 0), 'ушли с вкладки: подсветка выключена');
   check(await fitsScreen(), 'вкладка «Управление» по ширине помещается');
