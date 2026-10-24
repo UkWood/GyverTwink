@@ -19,7 +19,7 @@
 | `libraries/` | Скопированные библиотеки: EncButton 1.x, EEManager, SimplePortal (FastLED подтягивается PlatformIO из реестра, версия в `platformio.ini`) |
 | `platformio.ini`, `.github/workflows/build.yml` | Сборка и CI |
 | `tests/` | Хост-тесты прошивки (заглушки Arduino/FastLED/WebServer, ASan/UBSan), стенд протокола, e2e веб-интерфейса |
-| `web/`, `tools/gen_web.py` | Исходники веб-интерфейса (HTML/CSS/JS без зависимостей) и сборка в `web_page.h` |
+| `web/`, `tools/gen_web.py` | Исходники веб-интерфейса (HTML/CSS/JS без зависимостей) и сборка в `web_page.h`; `web/calib.js` (калибровка по видео) и `web/hexmap.js` (схема «соты» из файла Hex Router Designer) - чистые функции с тестами в `web/test/` |
 
 ## Прошивка: карта файлов
 - `GyverTwink_v1.2.ino` — настройки (`LED_MAX=1000`, `EEPROM_SIZE`, пины), структуры EEPROM, `setup`/`loop`.

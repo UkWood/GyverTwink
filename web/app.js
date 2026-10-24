@@ -66,7 +66,12 @@ const TOKEN_KEY = 'gt-token';
 const tokenGet = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
 const tokenSet = (t) => { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* без хранилища токен придётся вводить заново */ } };
 const tokenClear = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ничего */ } };
-const guardUi = { needed: false, started: false };
+const guardUi = { needed: false, started: false, saving: false };   // saving - идёт сохранение нового токена с этой страницы
+
+// ждём конца сохранения токена (до 3 с), чтобы повторить запрос уже с новым токеном
+async function guardSettled() {
+  for (let i = 0; i < 30 && guardUi.saving; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+}
 
 const api = {
   async call(method, path, params, body) {
@@ -75,33 +80,41 @@ const api = {
       e.code = 'auth';
       throw e;
     }
-    const opt = { method, headers: { 'X-Requested-With': 'GyverTwink' } };
-    const tok = tokenGet();
-    if (tok) opt.headers['X-GT-Token'] = tok;
-    let url = path;
-    if (params) {
-      const qs = new URLSearchParams(params).toString();
-      if (method === 'POST' && body === undefined) {
-        opt.body = qs;
-        opt.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      } else {
-        url += '?' + qs;
+    for (let attempt = 0; ; attempt++) {
+      const opt = { method, headers: { 'X-Requested-With': 'GyverTwink' } };
+      const tok = tokenGet();
+      if (tok) opt.headers['X-GT-Token'] = tok;
+      let url = path;
+      if (params) {
+        const qs = new URLSearchParams(params).toString();
+        if (method === 'POST' && body === undefined) {
+          opt.body = qs;
+          opt.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        } else {
+          url += '?' + qs;
+        }
       }
+      if (body !== undefined) {
+        opt.body = body;
+        opt.headers['Content-Type'] = 'text/plain';
+      }
+      const r = await fetch(url, opt);
+      let data = {};
+      try { data = await r.json(); } catch (e) { /* не JSON */ }
+      if (!r.ok) {
+        // токен только что сменили с этой страницы, а запрос (например, плановый опрос) ушёл ещё со старым: повторяем один раз
+        // с новым, а не показываем окно входа
+        if (data.error === 'auth' && attempt === 0 && (guardUi.saving || tokenGet() !== tok)) {
+          await guardSettled();
+          continue;
+        }
+        if (data.error === 'auth') guardNeeded();
+        const err = new Error(describeError(data.error, r.status));
+        err.code = data.error;
+        throw err;
+      }
+      return data;
     }
-    if (body !== undefined) {
-      opt.body = body;
-      opt.headers['Content-Type'] = 'text/plain';
-    }
-    const r = await fetch(url, opt);
-    let data = {};
-    try { data = await r.json(); } catch (e) { /* не JSON */ }
-    if (!r.ok) {
-      if (data.error === 'auth') guardNeeded();
-      const err = new Error(describeError(data.error, r.status));
-      err.code = data.error;
-      throw err;
-    }
-    return data;
   },
   get(path, params) { return this.call('GET', path, params); },
   post(path, params, body) { return this.call('POST', path, params, body); },
@@ -185,6 +198,7 @@ async function refresh(force) {
     setConn(true);
     render(force);
     spiralInfo();   // число светодиодов могло измениться (S в подсказке схемы)
+    hexInfo();
   } catch (e) {
     setConn(false);
   }
@@ -544,7 +558,7 @@ function suspiciousPoints(pts, k) {
 }
 
 // ---------- вкладка «Координаты» ----------
-const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set() };
+const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set(), under: [] };   // under - контур схемы «соты» (подложка, не записывается)
 
 function coordsSetDirty(d) {
   coords.dirty = d;
@@ -584,8 +598,25 @@ function coordsDraw() {
   const accent = cs.getPropertyValue('--accent').trim() || '#ffb020';
   const line = cs.getPropertyValue('--muted').trim() || '#888';
   const text = cs.getPropertyValue('--text').trim() || '#000';
-  coords.view = fitView(pts, w, h, 28);
+  const under = coords.under.length && $('hxOutline').checked ? coords.under : [];
+  // вид подгоняется и под контур схемы, если он показан (светодиоды лежат внутри него и от краёв отступают)
+  const viewPts = under.length ? pts.concat(under.flatMap((e) => [{ x: e[0], y: e[1] }, { x: e[2], y: e[3] }])) : pts;
+  coords.view = fitView(viewPts, w, h, 28);
   const v = coords.view;
+  if (under.length) {
+    g.strokeStyle = text;
+    g.globalAlpha = 0.28;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    for (const e of under) {
+      const a = toScreen({ x: e[0], y: e[1] }, v);
+      const b = toScreen({ x: e[2], y: e[3] }, v);
+      g.moveTo(a.x, a.y);
+      g.lineTo(b.x, b.y);
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+  }
   if ($('cLine').checked) {
     g.strokeStyle = line;
     g.globalAlpha = 0.45;
@@ -802,6 +833,82 @@ function spiralInfo() {
     const last = r.rows[r.rows.length - 1];
     $('spInfo').textContent = 'S = ' + total + '. Рядов: ' + r.rows.length + ' (' + r.rows.join(' + ') + '), последний ряд — остаток: ' + last + '.';
   }
+}
+
+// ---------- схема «соты» (файл экспорта из Hex Router Designer) ----------
+const hex = { map: null, layout: null, error: '' };
+
+// пояснение под выбором файла и состояние кнопок
+function hexInfo() {
+  const info = $('hxInfo');
+  const build = $('hxBuild');
+  const set = $('hxSet');
+  set.hidden = true;
+  build.disabled = true;
+  if (hex.error) { info.textContent = hex.error; return; }
+  if (!hex.map) { info.textContent = 'Файл не выбран.'; return; }
+  const m = hex.map;
+  const total = st ? st.ledAm : 0;
+  let text = (m.name ? '«' + m.name + '»: ' : '') + m.count + ' светодиодов, габариты ' + m.widthMm + ' × ' + m.heightMm + ' мм, рёбер контура: ' + m.outline.length + '.';
+  for (const w of hex.layout.warnings) text += ' ' + w;
+  if (!total) {
+    text += ' Число светодиодов на гирлянде ещё не получено.';
+  } else if (total !== m.count) {
+    text += ' На гирлянде ' + total + ' светодиодов, а в схеме ' + m.count + '.';
+    if (st && m.count <= st.ledMax) {
+      set.hidden = false;
+      set.textContent = 'Поставить на гирлянде ' + m.count + ' светодиодов';
+    } else {
+      text += ' Это больше предела прошивки.';
+    }
+  } else {
+    text += ' Число совпадает с гирляндой.';
+    build.disabled = false;
+  }
+  info.textContent = text;
+}
+
+async function hexLoadFile(file) {
+  hex.map = null;
+  hex.layout = null;
+  hex.error = '';
+  coords.under = [];
+  if (file) {
+    let text = '';
+    try { text = await file.text(); } catch (e) { hex.error = 'Не удалось прочитать файл.'; }
+    if (!hex.error) {
+      const r = parseHexMap(text, st ? st.ledMax : 0);
+      if (r.error) hex.error = r.error;
+      else { hex.map = r.map; hex.layout = layoutHexMap(r.map); }
+    }
+  }
+  hexInfo();
+}
+
+async function hexBuild() {
+  if (!hex.map) return;
+  await coordsLoad();   // число светодиодов берём с гирлянды: сохранение требует то же число
+  if (coords.orig.length !== hex.map.count) { toast('Число светодиодов на гирлянде (' + coords.orig.length + ') не совпадает со схемой (' + hex.map.count + ').'); hexInfo(); return; }
+  coords.pts = hex.layout.pts.map((p) => ({ x: p.x, y: p.y }));
+  coords.under = hex.layout.outline;
+  coords.est = new Set();
+  coords.sel = 0;
+  coordsSetDirty(true);
+  coordsSync();
+  coordsLedLight();
+  toast('Схема построена: ' + hex.map.count + ' светодиодов. Проверь карту и нажми «Сохранить на гирлянду»', true);
+}
+
+function initHex() {
+  $('hxFile').addEventListener('change', () => hexLoadFile($('hxFile').files[0] || null));
+  $('hxBuild').addEventListener('click', hexBuild);
+  $('hxSet').addEventListener('click', async () => {
+    if (!hex.map) return;
+    await setParams({ ledAm: hex.map.count });
+    hexInfo();
+  });
+  $('hxOutline').addEventListener('change', coordsDraw);
+  hexInfo();
 }
 
 async function spiralBuild() {
@@ -1509,6 +1616,7 @@ function initGuard() {
       toast('Токен: 8–32 символа (латиница, цифры, . _ ~ -)');
       return;
     }
+    guardUi.saving = true;   // запросы, получившие отказ, пока токен меняется, подождут и повторятся с новым (см. api.call)
     try {
       await api.post('/api/auth', { token: t });
       tokenSet(t);   // эту страницу не разлогиниваем: она уже знает новый токен
@@ -1516,6 +1624,8 @@ function initGuard() {
       toast('Токен сохранён. Запомни его: он нужен на других устройствах', true);
     } catch (e) {
       toast(e.message);
+    } finally {
+      guardUi.saving = false;
     }
     guardLoad();
   });
@@ -1565,6 +1675,7 @@ function init() {
   initScenes();
   initCoords();
   initSpiral();
+  initHex();
   initVcalib();
   initOta();
   initSched();
