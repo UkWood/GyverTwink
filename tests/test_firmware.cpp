@@ -58,6 +58,7 @@ static void resetAll() {
   LittleFS.files.clear();
   LittleFS.failWrites = false;
   memset(scenes, 0, sizeof(scenes));
+  memset(sceneMapN, 0, sizeof(sceneMapN));
   fakeMillis() += 1000;   // чтобы не попасть в "антидребезг" предыдущего теста
 }
 

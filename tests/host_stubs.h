@@ -191,7 +191,7 @@ struct LittleFSClass {
     begun = true;
     std::string d = dir();
     if (!d.empty()) {
-      for (const char* p : {"/scenes.bin"}) {
+      for (const char* p : {"/scenes.bin", "/x0.bin", "/x1.bin", "/x2.bin", "/x3.bin", "/x4.bin", "/x5.bin", "/x6.bin", "/x7.bin"}) {
         FILE* f = fopen(disk(d, p).c_str(), "rb");
         if (!f) continue;
         std::string s;

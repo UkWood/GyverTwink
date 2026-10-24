@@ -2,12 +2,15 @@
 // Хранятся в LittleFS одним файлом /scenes.bin: заголовок + SCENE_SLOTS записей фиксированного размера.
 // В сцену входят яркость, автосмена, случайный порядок, период, текущий эффект и настройки всех эффектов (EFFECT_COUNT).
 // Формат файла: версия 2 (с новыми эффектами). Файл версии 1 (22 эффекта) читается и переводится в версию 2 при следующей записи.
-// Питание, число светодиодов и лимит тока - свойства установки, а не сцены: они не сохраняются и не меняются.
+// Питание и лимит тока - свойства установки, а не сцены: они не сохраняются и не меняются.
+// Дополнения (отдельный файл /x<слот>.bin на сцену): настройки «Огня v2» всегда и схема светодиодов (число светодиодов, координаты),
+// если при сохранении выбрано «Сохранить схему». Применение сцены со схемой ставит это число светодиодов и эти координаты.
 
 #define SCENE_FILE "/scenes.bin"
 #define SCENE_TMP "/scenes.tmp"
 
 Scene scenes[SCENE_SLOTS];
+static uint16_t sceneMapN[SCENE_SLOTS];   // число светодиодов в схеме сцены (0 - схемы в сцене нет); кэш заголовков файлов дополнений
 
 // контрольная сумма Fletcher-16, считается по частям (a и b - накопители, начальное значение a = 1, b = 0)
 static void fletcherAdd(uint16_t& a, uint16_t& b, const byte* p, size_t n) {
@@ -21,6 +24,20 @@ static uint16_t scenesSum() {
   uint16_t a = 1, b = 0;
   fletcherAdd(a, b, (const byte*)scenes, sizeof(scenes));
   return (b << 8) | a;
+}
+
+static void sceneExtraPath(byte slot, char* out, const char* ext) {
+  snprintf(out, 14, "/x%u.%s", (unsigned)slot, ext);
+}
+
+// заголовок файла дополнений целиком и по размеру файла; n - число светодиодов схемы (0 - схемы нет)
+static bool sceneExtraHeader(File& f, SceneExtraHeader& h, uint16_t& n) {
+  if (f.size() < sizeof(h) || f.read((uint8_t*)&h, sizeof(h)) != sizeof(h)) return false;
+  if (h.magic[0] != 'G' || h.magic[1] != 'X' || h.version != SCENE_X_VERSION) return false;
+  n = (h.flags & SCENE_X_MAP) ? h.n : 0;
+  if ((h.flags & SCENE_X_MAP) && (n < 1 || n > LED_MAX)) return false;
+  size_t want = sizeof(h) + h.fireSize + (n ? sizeof(MM) + 2 * (size_t)n : 0);
+  return f.size() == want;
 }
 
 // допустима ли запись из файла
@@ -54,7 +71,7 @@ static bool scenesLoadV1(File& f, uint16_t sum) {
 }
 
 // чтение файла; любое несоответствие (нет файла, другой размер, неверная сумма, мусор в записях) - сцен нет
-void scenesLoad() {
+static void scenesReadFile() {
   memset(scenes, 0, sizeof(scenes));
   File f = LittleFS.open(SCENE_FILE, "r");
   if (!f) return;
@@ -76,6 +93,31 @@ void scenesLoad() {
     return;
   }
   for (int i = 0; i < SCENE_SLOTS; i++) scenes[i].name[SCENE_NAME_LEN] = '\0';
+}
+
+// кэш числа светодиодов схем сцен; файлы дополнений пустых слотов удаляются
+static void sceneExtrasScan() {
+  for (int i = 0; i < SCENE_SLOTS; i++) {
+    sceneMapN[i] = 0;
+    char path[14];
+    sceneExtraPath(i, path, "bin");
+    if (scenes[i].used != 1) {
+      LittleFS.remove(path);
+      continue;
+    }
+    File f = LittleFS.open(path, "r");
+    if (!f) continue;
+    SceneExtraHeader h;
+    uint16_t n = 0;
+    if (sceneExtraHeader(f, h, n)) sceneMapN[i] = n;
+    f.close();
+  }
+}
+
+// прочитать сцены и дополнения (при старте)
+void scenesLoad() {
+  scenesReadFile();
+  sceneExtrasScan();
 }
 
 // запись через временный файл: при сбое питания остаётся прежняя версия
@@ -131,9 +173,33 @@ int sceneCleanName(const char* in, char* out) {
   return blank ? -1 : n;
 }
 
-// сохранить текущие настройки в слот; false - ошибка записи (прежнее содержимое слота сохраняется)
-bool sceneSave(byte slot, const char* cleanName) {
+// записать дополнения слота во временный файл: настройки «Огня v2» и (withMap) схема светодиодов
+static bool sceneExtraWriteTmp(byte slot, bool withMap) {
+  char tmp[14];
+  sceneExtraPath(slot, tmp, "tmp");
+  SceneExtraHeader h = {{'G', 'X'}, SCENE_X_VERSION, (byte)(withMap ? SCENE_X_MAP : 0), (byte)sizeof(Fire2), 0, (uint16_t)(withMap ? cfg.ledAm : 0), 0};
+  uint16_t a = 1, b = 0;
+  fletcherAdd(a, b, (const byte*)&fire2, sizeof(Fire2));
+  if (withMap) {
+    fletcherAdd(a, b, (const byte*)&mm, sizeof(MM));
+    fletcherAdd(a, b, (const byte*)xy, 2 * (size_t)cfg.ledAm);
+  }
+  h.sum = (b << 8) | a;
+  File f = LittleFS.open(tmp, "w");
+  if (!f) return false;
+  bool ok = f.write((const uint8_t*)&h, sizeof(h)) == sizeof(h) && f.write((const uint8_t*)&fire2, sizeof(Fire2)) == sizeof(Fire2);
+  if (ok && withMap) {
+    ok = f.write((const uint8_t*)&mm, sizeof(MM)) == sizeof(MM) && f.write((const uint8_t*)xy, 2 * (size_t)cfg.ledAm) == 2 * (size_t)cfg.ledAm;
+  }
+  f.close();
+  if (!ok) LittleFS.remove(tmp);
+  return ok;
+}
+
+// сохранить текущие настройки в слот (withMap - ещё и схему светодиодов); false - ошибка записи (прежнее содержимое слота сохраняется)
+bool sceneSave(byte slot, const char* cleanName, bool withMap) {
   if (slot >= SCENE_SLOTS) return false;
+  if (!sceneExtraWriteTmp(slot, withMap)) return false;   // сначала дополнения во временный файл: при отказе ничего не меняется
   Scene old = scenes[slot];
   Scene& s = scenes[slot];
   memset(&s, 0, sizeof(s));
@@ -146,9 +212,64 @@ bool sceneSave(byte slot, const char* cleanName) {
   s.curEff = curEff < EFFECT_COUNT ? curEff : 0;
   memcpy(s.effs, effs, sizeof(effs));
   memcpy(s.fx, effsX, sizeof(effsX));
-  if (scenesSave()) return true;
-  scenes[slot] = old;
-  return false;
+  char tmp[14], path[14];
+  sceneExtraPath(slot, tmp, "tmp");
+  sceneExtraPath(slot, path, "bin");
+  if (!scenesSave()) {
+    scenes[slot] = old;
+    LittleFS.remove(tmp);
+    return false;
+  }
+  LittleFS.remove(path);
+  if (!LittleFS.rename(tmp, path)) {   // сцена записана, а дополнения нет: лучше сообщить об ошибке, чем оставить чужие
+    sceneMapN[slot] = 0;
+    return false;
+  }
+  sceneMapN[slot] = withMap ? cfg.ledAm : 0;
+  return true;
+}
+
+// дополнения слота: проверить файл целиком (заголовок, размер, контрольная сумма) и только потом применить
+static void sceneExtraApply(byte slot) {
+  char path[14];
+  sceneExtraPath(slot, path, "bin");
+  File f = LittleFS.open(path, "r");
+  if (!f) return;
+  SceneExtraHeader h;
+  uint16_t n = 0;
+  if (!sceneExtraHeader(f, h, n)) {
+    f.close();
+    return;
+  }
+  uint16_t a = 1, b = 0;
+  byte buf[64];
+  size_t left = h.fireSize + (n ? sizeof(MM) + 2 * (size_t)n : 0);
+  while (left) {
+    size_t k = f.read(buf, left < sizeof(buf) ? left : sizeof(buf));
+    if (k == 0) break;
+    fletcherAdd(a, b, buf, k);
+    left -= k;
+  }
+  f.close();
+  if (left || h.sum != (uint16_t)((b << 8) | a)) return;   // повреждён: сцена применяется без дополнений
+  f = LittleFS.open(path, "r");
+  if (!f) return;
+  f.read((uint8_t*)&h, sizeof(h));
+  if (h.fireSize == sizeof(Fire2)) {
+    f.read((uint8_t*)&fire2, sizeof(Fire2));
+    EEfire2.update();
+  } else {
+    for (size_t i = 0; i < h.fireSize; i++) f.read(buf, 1);   // настройки огня другой версии не берём
+  }
+  if (n) {
+    MM skip;
+    f.read((uint8_t*)&skip, sizeof(skip));   // границы пересчитываются по координатам
+    setLedAmount(n);                          // сцена со схемой ставит и число светодиодов
+    f.read((uint8_t*)xy, 2 * (size_t)n);
+    recalcBounds();
+    coordsSave();
+  }
+  f.close();
 }
 
 // применить сцену; false - слот пуст
@@ -165,6 +286,7 @@ bool sceneLoad(byte slot) {
   EEeff.update();
   EEfx.update();
   curEff = s.curEff;
+  sceneExtraApply(slot);       // «Огонь v2» и схема светодиодов, если они сохранены в сцене
   return true;
 }
 
@@ -172,7 +294,13 @@ bool sceneDelete(byte slot) {
   if (slot >= SCENE_SLOTS || scenes[slot].used != 1) return false;
   Scene old = scenes[slot];
   memset(&scenes[slot], 0, sizeof(Scene));
-  if (scenesSave()) return true;
-  scenes[slot] = old;
-  return false;
+  if (!scenesSave()) {
+    scenes[slot] = old;
+    return false;
+  }
+  char path[14];
+  sceneExtraPath(slot, path, "bin");
+  LittleFS.remove(path);
+  sceneMapN[slot] = 0;
+  return true;
 }

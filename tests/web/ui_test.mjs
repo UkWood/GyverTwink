@@ -282,7 +282,7 @@ try {
   await page.fill('#sceneName', 'Вечер');
   await page.click('#sceneSave');
   check(await until(async () => (await page.$$('#sceneList li')).length === 1), 'сцена сохранена и показана в списке');
-  check((await page.textContent('#sceneList .name')) === 'Вечер', 'название сцены');
+  check((await page.textContent('#sceneList .name')) === 'Вечер · схема 120', 'название сцены и метка схемы на 120 светодиодов (по умолчанию схема сохраняется)');
   check(await page.isHidden('#sceneEmpty'), 'подсказка скрыта');
   check((await page.$eval('#sceneName', (e) => e.value)) === '', 'поле названия очищено');
 
@@ -309,13 +309,43 @@ try {
   await page.reload();
   await page.click('[data-tab=scenes]');
   check(await until(async () => (await page.$$('#sceneList li')).length === 1), 'после перезапуска сцена на месте');
-  check((await page.textContent('#sceneList .name')) === 'Вечер', 'и с тем же названием');
+  check((await page.textContent('#sceneList .name')) === 'Вечер · схема 120', 'и с тем же названием и схемой');
   await page.click('[data-tab=control]');
   await setRange('#bright', 5);
   check(await stateIs('bright', 5), 'яркость 5');
   await page.click('[data-tab=scenes]');
   await page.click('#sceneList [data-act=load]');
   check(await stateIs('bright', 60), 'сцена после перезапуска применяется (яркость 60 - из перезаписи)');
+
+  console.log('схема светодиодов в сцене');
+  await page.click('[data-tab=control]');
+  await setNumber('#ledAm', 90);
+  check(await stateIs('ledAm', 90), 'число светодиодов изменено на 90');
+  await page.click('[data-tab=scenes]');
+  await page.click('#sceneList [data-act=load]');
+  check(await stateIs('ledAm', 120), 'применение сцены вернуло число светодиодов 120 (схема из сцены, в том числе после перезапуска гирлянды)');
+  check(await until(async () => (await page.textContent('#toast')).includes('схема: 120')), 'сообщение: применена схема на 120 светодиодов');
+  await page.uncheck('#sceneMap');
+  await page.fill('#sceneName', 'БезСхемы');
+  await page.click('#sceneSave');
+  check(await until(async () => (await page.$$('#sceneList li')).length === 2), 'сцена без схемы сохранена');
+  const noMapName = await page.textContent('#sceneList li:nth-child(2) .name');
+  check(noMapName === 'БезСхемы', 'у неё нет метки схемы (' + noMapName + ')');
+  await page.check('#sceneMap');
+  await page.click('[data-tab=control]');
+  await setNumber('#ledAm', 90);
+  check(await stateIs('ledAm', 90), 'число светодиодов снова 90');
+  await page.click('[data-tab=scenes]');
+  await page.click('#sceneList li:nth-child(2) [data-act=load]');
+  await sleep(300);
+  check(state.ledAm === 90, 'сцена без схемы число светодиодов не меняет');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#sceneList li:nth-child(2) [data-act=delete]');
+  check(await until(async () => (await page.$$('#sceneList li')).length === 1), 'сцена без схемы удалена');
+  await page.click('[data-tab=control]');
+  await setNumber('#ledAm', 120);
+  check(await stateIs('ledAm', 120), 'число светодиодов возвращено к 120');
+  await page.click('[data-tab=scenes]');
 
   console.log('заполнение всех мест и удаление');
   for (let i = 2; i <= 8; i++) {
@@ -543,13 +573,12 @@ try {
   check(await page.isDisabled('#hxBuild'), 'чужой файл: строить нельзя');
   await page.setInputFiles('#hxFile', hexPath);
   check(await until(async () => (await page.textContent('#hxInfo')).includes('378 светодиодов') && (await page.textContent('#hxInfo')).includes('866 × 800 мм')), 'файл прочитан: 378 светодиодов, габариты 866 × 800 мм');
-  check((await page.textContent('#hxInfo')).includes('На гирлянде 120'), 'видно, что на гирлянде 120 светодиодов');
-  check(await page.isDisabled('#hxBuild') && await page.isVisible('#hxSet'), 'число не совпадает: строить нельзя, предложено поставить число светодиодов');
-  await page.click('#hxSet');
-  check(await stateIs('ledAm', 378), 'число светодиодов на гирлянде стало 378');
-  check(await until(async () => await page.isEnabled('#hxBuild')), 'число совпало: схему можно строить');
+  check((await page.textContent('#hxInfo')).includes('На гирлянде сейчас 120') && (await page.textContent('#hxInfo')).includes('изменено на 378 автоматически'), 'видно, что на гирлянде 120 светодиодов и число изменится автоматически');
+  check(await page.isEnabled('#hxBuild'), 'число не совпадает, но в пределах 1000: строить можно');
   await page.click('#hxBuild');
+  check(await stateIs('ledAm', 378), 'число светодиодов на гирлянде автоматически стало 378');
   check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'схема попала на карту как несохранённая правка');
+  check(await until(async () => (await page.textContent('#toast')).includes('120 → 378')), 'сообщение: число светодиодов изменено 120 → 378');
   check(await page.evaluate(() => coords.pts.length === 378 && coords.under.length === 54), 'на карте 378 точек и контур из 54 рёбер');
   await page.uncheck('#hxOutline');
   await page.check('#hxOutline');
@@ -565,6 +594,29 @@ try {
   check(hexSame, 'на гирлянде точки схемы в том же порядке и на тех же местах, что в расчёте страницы');
   check(await fitsScreen(), 'вкладка «Координаты» со схемой «соты» помещается по ширине экрана 390 px');
   await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_hex.png'), fullPage: true });
+  // контур относится к своей карте
+  const flipRes = await page.evaluate(() => {
+    let lo = 255, hi = 0;
+    for (const p of coords.pts) { lo = Math.min(lo, p.y); hi = Math.max(hi, p.y); }
+    return { lo, hi, before: coords.under.map((e) => e.slice()) };
+  });
+  await page.click('#spFlip');
+  check(await page.evaluate((f) => coords.under.length === f.before.length && coords.under.every((e, i) => e[0] === f.before[i][0] && Math.abs(e[1] - (f.lo + f.hi - f.before[i][1])) < 0.11 && Math.abs(e[3] - (f.lo + f.hi - f.before[i][3])) < 0.11), flipRes), 'переворот карты зеркалит и контур схемы «соты»');
+  await page.click('#spFlip');   // обратно
+  await page.click('#cUndo');
+  check(await page.evaluate(() => coords.under.length === 54), 'отмена правок на сохранённой карте контур не трогает');
+  await page.click('#spBuild');
+  check(await until(async () => await page.evaluate(() => coords.pts.length === 378 && coords.under.length === 0)), 'схема «спираль» убирает контур «сот»: каши из двух схем нет');
+  await page.click('#hxBuild');
+  check(await until(async () => await page.evaluate(() => coords.under.length === 54)), 'схема «соты» построена заново вместе с контуром');
+  await page.click('#cUndo');
+  check(await page.evaluate(() => coords.under.length === 0), 'отмена несохранённой схемы убирает её контур');
+  // схема больше предела прошивки: предупреждение и построить нельзя
+  const tooMany = JSON.stringify({ gyvertwink_map: 1, unit: 'mm', led_count: 1001, leds: Array.from({ length: 1001 }, (_, i) => [i, 0]) });
+  await page.setInputFiles('#hxFile', { name: 'big.json', mimeType: 'application/json', buffer: Buffer.from(tooMany) });
+  check(await until(async () => (await page.textContent('#hxInfo')).includes('предел прошивки 1000')), 'схема на 1001 светодиод: понятное предупреждение о пределе');
+  check((await page.textContent('#toast')).includes('предел'), 'и всплывающее сообщение');
+  check(await page.isDisabled('#hxBuild') && state.ledAm === 378, 'построить такую схему нельзя, число светодиодов не менялось');
   await page.click('[data-tab=control]');
   await setNumber('#ledAm', 120);   // как было до проверки
   check(await stateIs('ledAm', 120), 'число светодиодов возвращено к 120');

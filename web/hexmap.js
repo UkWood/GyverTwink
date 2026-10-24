@@ -106,6 +106,11 @@ function layoutHexMap(map) {
   return { pts, outline, scale: s, warnings };
 }
 
+// контур после переворота карты по вертикали: та же ось зеркала (lo + hi - y), что у точек (flipVertical в app.js)
+function flipOutline(outline, lo, hi) {
+  return outline.map((e) => [e[0], hmRound1(lo + hi - e[1]), e[2], hmRound1(lo + hi - e[3])]);
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { parseHexMap, layoutHexMap, hexMapBounds, HEXMAP_FORMAT, HEXMAP_AREA, HEXMAP_MIN_STEP };
+  module.exports = { parseHexMap, layoutHexMap, hexMapBounds, flipOutline, HEXMAP_FORMAT, HEXMAP_AREA, HEXMAP_MIN_STEP };
 }

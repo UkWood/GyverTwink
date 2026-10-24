@@ -52,6 +52,7 @@ TEST(coords_second_eeprom_block_is_written_only_for_more_than_xy_base_leds) {
   CHECK_EQ((uint8_t)XY_BASE, 244);           // ключ блоков mm и xy, как было при LED_MAX = 500
   CHECK(LED_MAX > XY_BASE);
   CHECK((void*)&xy[XY_BASE] == (void*)((uint8_t*)xy + 2 * XY_BASE));   // массив в ОЗУ один и непрерывный, блоки - его части
+  EExy.nows = EExyHi.nows = 0;
   cfg.ledAm = 40;
   std::string few;
   for (int i = 0; i < 40; i++) few += hex2(i) + hex2(2 * i);

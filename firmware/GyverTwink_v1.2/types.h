@@ -160,6 +160,21 @@ struct SceneV1 {
 };
 static_assert(sizeof(SceneV1) == 1 + SCENE_NAME_LEN + 1 + 5 + 3 * ACTIVE_PALETTES * 2, "размер SceneV1 - формат файла, менять нельзя");
 
+// дополнения сцены - отдельный файл на слот /x<слот>.bin (scenes.ino): настройки «Огня v2» и, если выбрано при сохранении,
+// схема светодиодов (число светодиодов, границы карты и координаты). Основной файл сцен при этом не меняется.
+// После заголовка идут: Fire2 (fireSize байт, если fireSize > 0), затем при flags & 1 - MM и n пар координат.
+#define SCENE_X_VERSION 1
+#define SCENE_X_MAP 1
+struct SceneExtraHeader {
+  byte magic[2];    // 'G', 'X'
+  byte version;     // SCENE_X_VERSION
+  byte flags;       // SCENE_X_MAP - в файле есть схема
+  byte fireSize;    // размер Fire2 в файле (0 - настроек огня нет)
+  byte reserved;
+  uint16_t n;       // число светодиодов схемы (0 без схемы)
+  uint16_t sum;     // Fletcher-16 по данным после заголовка
+};
+
 // заголовок файла: версия формата, число слотов и контрольная сумма записей
 struct SceneHeader {
   char magic[2];
