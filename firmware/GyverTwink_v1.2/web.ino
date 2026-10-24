@@ -471,7 +471,7 @@ static void handleXyPost() {
     webError(409, "count");
     return;
   }
-  String body = webServer.arg("plain");
+  const String& body = webServer.arg("plain");   // без копии: на 1000 светодиодов тело - 4 КБ
   if (!webServer.hasArg("plain") || (long)body.length() != 4 * n) {
     webError(400, "xy");
     return;

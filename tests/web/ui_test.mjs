@@ -150,6 +150,13 @@ try {
   check(await until(() => state.curEff !== before), 'кнопка «Следующий» переключает эффект');
   check(await until(async () => (await page.textContent('#cur')).startsWith(state.curEff + '.')), 'название текущего эффекта обновилось');
 
+  console.log('предел светодиодов');
+  check((await page.$eval('#ledAm', (e) => e.max)) === '1000', 'в поле количества светодиодов предел 1000');
+  await setNumber('#ledAm', 1000);
+  check(await stateIs('ledAm', 1000), '1000 светодиодов принимаются');
+  await setNumber('#ledAm', 120);
+  check(await stateIs('ledAm', 120), 'число светодиодов возвращено к 120');
+
   console.log('ошибки');
   await setNumber('#ledAm', 9999);
   check(await until(async () => (await page.textContent('#toast')).includes('количество светодиодов')), 'неверное значение: понятное сообщение об ошибке');

@@ -35,5 +35,6 @@ void ledHighlightOff() {
 // записать координаты и границы в EEPROM
 void coordsSave() {
   EExy.updateNow();
+  if (cfg.ledAm > XY_BASE) EExyHi.updateNow();   // второй блок нужен, только если светодиодов больше XY_BASE
   EEmm.updateNow();
 }

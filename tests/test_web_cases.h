@@ -111,7 +111,7 @@ TEST(web_set_applies_every_parameter) {
 TEST(web_set_rejects_bad_values_and_changes_nothing) {
   resetAll();
   const char* bad[][2] = {{"bright", "256"}, {"bright", "-1"}, {"bright", "abc"}, {"bright", ""}, {"bright", "1.5"},
-                          {"ledAm", "0"},    {"ledAm", "501"}, {"period", "0"},   {"offMin", "0"}, {"offMin", "251"},
+                          {"ledAm", "0"},    {"ledAm", "1001"}, {"period", "0"},   {"offMin", "0"}, {"offMin", "251"},
                           {"maxMa", "25501"}, {"power", "2"},  {"auto", "x"},     {"bright", "1234567"}};
   for (auto& b : bad) {
     // вместе с неверным значением идёт допустимое: оно не должно примениться
