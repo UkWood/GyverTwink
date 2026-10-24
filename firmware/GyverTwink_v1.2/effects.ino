@@ -8,6 +8,7 @@
 #define FX_BREATH 3    // дыхание
 #define FX_WAVE_Y 4    // волны по высоте
 #define FX_WAVE_R 5    // волны от центра
+#define FX_FIRE2 6     // огонь v2 (номер эффекта FIRE2_EFF, настройки в fire2)
 
 // треугольная волна 0..255..0 и её сглаженный вариант (smoothstep)
 static byte fxTri(byte x) {
@@ -69,6 +70,33 @@ static CRGB fxColor(byte e, int i, byte scale, uint16_t phase) {
       int noise = inoise8(xy[i][0] * scale / 10, xy[i][1] * scale / 30 + phase, 0);
       int heat = constrain(lift * 3 / 2 + noise - 200, 0, 255);
       return CRGB(min(heat * 3, 255), heat > 85 ? min((heat - 85) * 3, 255) : 0, heat > 170 ? (heat - 170) * 3 : 0);
+    }
+    case FX_FIRE2: {
+      // огонь v2: тот же плавный шум, что у «Огня», и четыре параметра формы (fire2)
+      int lift = 255 - ny;
+      int noise = inoise8(xy[i][0] * scale / 10, xy[i][1] * scale / 30 + phase, 0);
+      int heat = lift * 3 / 2 + noise - 200;
+      // трепет: второй, более мелкий и быстрый шум, поверх плавного
+      if (fire2.flicker) heat += (inoise8(xy[i][0] * scale / 5, xy[i][1] * scale / 15 + phase * 2, 77) - 128) * fire2.flicker >> 8;
+      // колпак: к краям карты и к верху пламя гаснет сильнее
+      if (fire2.shape) heat -= ((abs(nx - 128) * 2 * fire2.shape >> 8) * (ny + 64)) >> 8;
+      heat = constrain(heat, 0, 255);
+      CRGB c = fire2.white ? CRGB(heat, heat, heat)
+                           : CRGB(min(heat * 3, 255), heat > 85 ? min((heat - 85) * 3, 255) : 0, heat > 170 ? (heat - 170) * 3 : 0);
+      // искры: на каждом шаге времени (около 8 раз в секунду на средней скорости) светодиод над основанием вспыхивает с вероятностью до 3% (sparks = 255)
+      if (fire2.sparks && ny > 40) {
+        uint32_t h = (uint32_t)(i + 1) * 2654435761u ^ (uint32_t)(phase >> 4) * 2246822519u;
+        h ^= h >> 15;
+        h *= 2246822519u;
+        h ^= h >> 13;
+        if ((h & 0x1FFF) * 255 < (uint32_t)fire2.sparks * 8192u / 32) {
+          CRGB sp = fire2.white ? CRGB(255, 255, 255) : CRGB(255, 170, 40);
+          c.r = max(c.r, sp.r);
+          c.g = max(c.g, sp.g);
+          c.b = max(c.b, sp.b);
+        }
+      }
+      return c;
     }
     case FX_BREATH: {
       // вся гирлянда «дышит» одним цветом, который медленно плывёт по палитре; scale сдвигает фазу по карте

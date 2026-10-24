@@ -8,7 +8,9 @@
 // Эффекты 0..21 - палитры (градиент и шум), 22.. - новые (effects.ino). Новые эффекты хранят настройки в отдельном блоке EEPROM
 // в конце (effsX): блок effs[22] менять нельзя, иначе сдвинутся адреса и сбросится калибровка.
 #define EXT_EFFECTS 6
-#define EFFECT_COUNT (ACTIVE_PALETTES * 2 + EXT_EFFECTS)
+// «Огонь v2» (последний эффект) хранит настройки в своём блоке EEPROM (fire2): блок effsX не растёт, иначе сдвинутся расписание и токен
+#define FIRE2_EFF (ACTIVE_PALETTES * 2 + EXT_EFFECTS)
+#define EFFECT_COUNT (FIRE2_EFF + 1)
 
 struct Cfg {
   uint16_t ledAm = 50;
@@ -42,11 +44,22 @@ struct Effects {
   byte speed = 150;
 };
 
+// «Огонь v2»: общие настройки и четыре параметра формы (0..255, white - 0/1), блок EEPROM в самом конце
+struct Fire2 {
+  Effects e;
+  byte shape = 120;     // колпак: насколько гаснет пламя к краям и к верху
+  byte sparks = 80;     // искры над пламенем
+  byte flicker = 100;   // трепет: быстрый мелкий шум поверх плавного
+  byte white = 0;       // 1 - белый огонь вместо красно-жёлтого
+};
+
 extern Effects effs[ACTIVE_PALETTES * 2];
 extern Effects effsX[EXT_EFFECTS];
+extern Fire2 fire2;
 
 // настройки эффекта по общему номеру 0..EFFECT_COUNT-1
 inline Effects& effAt(byte n) {
+  if (n >= FIRE2_EFF) return fire2.e;
   return n < ACTIVE_PALETTES * 2 ? effs[n] : effsX[n - ACTIVE_PALETTES * 2];
 }
 
@@ -60,6 +73,14 @@ inline void fxDefaults(Effects* fx) {
     fx[i].scale = sc[i];
     fx[i].speed = sp[i];
   }
+}
+
+// значения «Огня v2» по умолчанию (прочитанный из EEPROM блок их заменит)
+inline void fire2Defaults(Fire2& f) {
+  f = Fire2();
+  f.e.fav = true;
+  f.e.scale = 50;
+  f.e.speed = 170;
 }
 
 // ---- расписание (schedule.ino): отдельный блок EEPROM в конце ----

@@ -82,9 +82,13 @@ static void webSendState() {
 }
 
 static void webSendEffect(byte n) {
-  char b[100];
-  snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u}", (unsigned)n, effAt(n).fav ? 1 : 0,
-           (unsigned)effAt(n).scale, (unsigned)effAt(n).speed);
+  char b[160];
+  int len = snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u", (unsigned)n, effAt(n).fav ? 1 : 0,
+                     (unsigned)effAt(n).scale, (unsigned)effAt(n).speed);
+  if (n == FIRE2_EFF)   // у «Огня v2» есть ещё четыре параметра
+    len += snprintf(b + len, sizeof(b) - len, ",\"shape\":%u,\"sparks\":%u,\"flicker\":%u,\"white\":%d", (unsigned)fire2.shape,
+                    (unsigned)fire2.sparks, (unsigned)fire2.flicker, fire2.white ? 1 : 0);
+  snprintf(b + len, sizeof(b) - len, "}");
   webJson(200, b);
 }
 
@@ -292,23 +296,36 @@ static void handleEffectGet() {
   if (webEffectArg(n)) webSendEffect(n);
 }
 
-// POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа)
+// POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа).
+// Для «Огня v2» (n = FIRE2_EFF) ещё shape, sparks, flicker (0-255) и white (0/1); у других эффектов эти поля - ошибка 400
 static void handleEffectPost() {
   if (!webAllowed()) return;
-  long n, fav, scale, speed, show;
+  long n, fav, scale, speed, show, shape, sparks, flicker, white;
   if (!webEffectArg(n)) return;
   int rf = webArgInt("fav", 0, 1, fav);
   int rs = webArgInt("scale", 0, 255, scale);
   int rp = webArgInt("speed", 0, 255, speed);
   int rw = webArgInt("show", 0, 1, show);
-  if (rf < 0 || rs < 0 || rp < 0 || rw < 0) {
-    webError(400, rf < 0 ? "fav" : rs < 0 ? "scale" : rp < 0 ? "speed" : "show");
+  int rh = webArgInt("shape", 0, 255, shape);
+  int rk = webArgInt("sparks", 0, 255, sparks);
+  int rl = webArgInt("flicker", 0, 255, flicker);
+  int rt = webArgInt("white", 0, 1, white);
+  if (rf < 0 || rs < 0 || rp < 0 || rw < 0 || rh < 0 || rk < 0 || rl < 0 || rt < 0) {
+    webError(400, rf < 0 ? "fav" : rs < 0 ? "scale" : rp < 0 ? "speed" : rw < 0 ? "show" : rh < 0 ? "shape" : rk < 0 ? "sparks" : rl < 0 ? "flicker" : "white");
+    return;
+  }
+  if ((rh > 0 || rk > 0 || rl > 0 || rt > 0) && n != FIRE2_EFF) {
+    webError(400, rh > 0 ? "shape" : rk > 0 ? "sparks" : rl > 0 ? "flicker" : "white");
     return;
   }
   if (rf > 0) effAt(n).fav = fav;
   if (rs > 0) effAt(n).scale = scale;
   if (rp > 0) effAt(n).speed = speed;
-  if (rf > 0 || rs > 0 || rp > 0) effSave(n);
+  if (rh > 0) fire2.shape = shape;
+  if (rk > 0) fire2.sparks = sparks;
+  if (rl > 0) fire2.flicker = flicker;
+  if (rt > 0) fire2.white = white;
+  if (rf > 0 || rs > 0 || rp > 0 || rh > 0 || rk > 0 || rl > 0 || rt > 0) effSave(n);
   if (rw > 0 && show) {
     forceTmr.stop();
     forceEff = n;   // и цель правок по UDP остаётся этим же эффектом
