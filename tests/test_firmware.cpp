@@ -561,6 +561,64 @@ TEST(fire_is_hotter_at_the_bottom_than_at_the_top) {
   CHECK(bottom > top * 2);
 }
 
+// Шум Перлина устроен ячейками по 256 единиц. Если соседние ряды отстоят друг от друга почти на целую ячейку (схема «спираль»
+// из 5 рядов через 50 единиц карты при масштабе 50), узор между рядами сдвигается почти на период и направление движения
+// огня кажется случайным или обратным (стробоскопический эффект). Поэтому по вертикали шум должен идти чаще, чем раз на ячейку.
+TEST(fire_noise_is_sampled_finely_enough_between_sparse_rows_and_moves_forward) {
+  resetAll();
+  const int rows[] = {30, 28, 26, 24, 12};
+  int n = 0;
+  for (int r : rows) n += r;
+  cfg.ledAm = n;
+  int idx = 0;
+  for (int r = 0; r < 5; r++) {
+    for (int i = 0; i < rows[r]; i++, idx++) {
+      xy[idx][0] = 127 + (int)((i - (rows[r] - 1) / 2.0) * 8);
+      xy[idx][1] = 20 + (4 - r) * 50;   // нижний ряд (N1) - наибольший Y
+    }
+  }
+  recalcBounds();
+  effsX[2].scale = 50;   // значение по умолчанию
+  effsX[2].speed = 170;
+  std::vector<std::array<int, 3>> frame1, frame2;
+  std::vector<std::array<int, 3>>* sink = &frame1;
+  noiseHook() = [&](uint16_t x, uint16_t y, uint16_t z) { sink->push_back({x, y, z}); };
+  runEffect(NEW0 + 2);
+  sink = &frame2;
+  runEffect(NEW0 + 2);
+  noiseHook() = nullptr;
+  CHECK_EQ((int)frame1.size(), n);
+  CHECK_EQ((int)frame2.size(), n);
+  // координата шума по Y у первого светодиода каждого ряда: соседние ряды - не дальше половины ячейки (128 единиц)
+  int first = 0;
+  int prevY = -1;
+  for (int r = 0; r < 5; r++) {
+    int y = frame1[first][1];
+    if (prevY >= 0) {
+      int step = prevY - y;   // верхний ряд (меньший Y) имеет меньшую координату шума
+      CHECK(step > 0 && step <= 128);
+    }
+    prevY = y;
+    first += rows[r];
+  }
+  // со временем узор идёт вперёд: координата растёт (при скорости выше 128), и сдвиг за кадр мал по сравнению с шагом между рядами
+  for (int i = 0; i < n; i += 17) {
+    int d = frame2[i][1] - frame1[i][1];
+    CHECK(d > 0 && d < 40);
+  }
+  // при скорости ниже 128 направление обратное (как и описано в подсказке)
+  effsX[2].speed = 100;
+  frame1.clear();
+  frame2.clear();
+  sink = &frame1;
+  noiseHook() = [&](uint16_t x, uint16_t y, uint16_t z) { sink->push_back({x, y, z}); };
+  runEffect(NEW0 + 2);
+  sink = &frame2;
+  runEffect(NEW0 + 2);
+  noiseHook() = nullptr;
+  CHECK(frame2[0][1] < frame1[0][1]);
+}
+
 TEST(twinkle_sparks_fade_out_and_scale_controls_density) {
   resetAll();
   lineUp(200);

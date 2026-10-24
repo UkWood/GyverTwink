@@ -37,8 +37,9 @@ inline long random(long a, long b) { return a + (long)(fakeRng()() % (unsigned l
 inline long random(long b) { return random(0, b); }
 
 #define constrain(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))
-template <typename A, typename B> inline auto min(A a, B b) -> decltype(a < b ? a : b) { return a < b ? a : b; }
-template <typename A, typename B> inline auto max(A a, B b) -> decltype(a > b ? a : b) { return a > b ? a : b; }
+// возврат по значению: у decltype(a < b ? a : b) для одинаковых типов получается ссылка на параметр-копию (висячая ссылка)
+template <typename A, typename B> inline std::common_type_t<A, B> min(A a, B b) { return a < b ? a : b; }
+template <typename A, typename B> inline std::common_type_t<A, B> max(A a, B b) { return a > b ? a : b; }
 
 // ---- сеть ----
 struct IPAddress {
@@ -721,7 +722,15 @@ inline CRGB ColorFromPalette(const CRGBPalette16&, uint8_t idx, uint8_t, TBlendT
 inline CRGB blend(const CRGB& a, const CRGB& b, uint8_t amt) {
   return CRGB(a.r + ((b.r - a.r) * amt) / 256, a.g + ((b.g - a.g) * amt) / 256, a.b + ((b.b - a.b) * amt) / 256);
 }
-inline uint8_t inoise8(uint16_t x, uint16_t y, uint16_t z) { return (uint8_t)(x * 31 + y * 17 + z * 7); }
+// хук для тестов: видит каждый вызов шума (какие координаты запрашивает эффект)
+inline std::function<void(uint16_t, uint16_t, uint16_t)>& noiseHook() {
+  static std::function<void(uint16_t, uint16_t, uint16_t)> h;
+  return h;
+}
+inline uint8_t inoise8(uint16_t x, uint16_t y, uint16_t z) {
+  if (noiseHook()) noiseHook()(x, y, z);
+  return (uint8_t)(x * 31 + y * 17 + z * 7);
+}
 
 // Модель мощности из FastLED (power_mgt.cpp, константы те же в 3.4.0 и 3.5.0): R 80 мВт, G 55 мВт, B 75 мВт, 5 мВт на выключенный светодиод
 inline uint32_t calculate_unscaled_power_mW(const CRGB* leds, uint16_t n) {
