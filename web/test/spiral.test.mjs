@@ -84,10 +84,24 @@ test('спираль: пропорции сохраняются, шаг межд
   }
 });
 
+test('спираль: расстояние между рядами в 3 шага (значение интерфейса по умолчанию) втрое больше шага по ряду', () => {
+  const r = app.spiralLayout([21, 21, 21, 21], 84, 3);
+  const rows = split(r.pts, r.rows);
+  const pitch = (xs(rows[0])[20] - xs(rows[0])[0]) / 20;
+  const rowGap = rows[0][0].y - rows[1][0].y;
+  assert.ok(Math.abs(rowGap / pitch - 3) < 0.2, 'отношение ' + rowGap / pitch);
+  for (let i = 1; i < rows.length; i++) assert.ok(Math.abs(rows[i - 1][0].y - rows[i][0].y - rowGap) <= 1, 'ряды через равные промежутки');
+  const wider = app.spiralLayout([21, 21, 21, 21], 84, 1);
+  assert.ok(rows[0][0].y - rows[3][0].y > 2.5 * (split(wider.pts, wider.rows)[0][0].y - split(wider.pts, wider.rows)[3][0].y), 'при шаге 3 схема втрое выше, чем при шаге 1');
+});
+
 test('спираль: высокая схема ограничивается высотой, широкая - шириной', () => {
   const tall = app.spiralLayout(Array(30).fill(2), 61, 1);   // 31 ряд по 2 светодиода, узкая и высокая
   const ys = tall.pts.map((p) => p.y);
   assert.ok(Math.max(...ys) - Math.min(...ys) >= 238);
+  const tall10 = app.spiralLayout([2, 2, 2, 2], 10, 10);       // самый большой допустимый шаг: схема всё равно в поле
+  assert.equal(tall10.error, undefined);
+  assert.ok(tall10.pts.every((p) => p.y >= 0 && p.y <= 255));
   const flat = app.spiralLayout([100], 101, 1);              // два ряда: ширина 99 шагов, высота 1
   const x = flat.pts.map((p) => p.x);
   assert.ok(Math.max(...x) - Math.min(...x) >= 238);
@@ -115,7 +129,7 @@ test('спираль: ошибки ввода понятны и ничего н�
     [[5, NaN], 10, 1, /N2/],
     [[3], 0, 1, /Нет светодиодов/],
     [[3], 10, 0.1, /Расстояние/],
-    [[3], 10, 6, /Расстояние/],
+    [[3], 10, 11, /Расстояние/],
     [[3], 10, NaN, /Расстояние/],
   ];
   for (const [counts, total, gap, re] of bad) {

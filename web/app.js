@@ -632,11 +632,12 @@ async function coordsApplyResult(pts, est) {
 // ---------- схема «спираль» (цилиндр, конус) ----------
 // Лента намотана рядами снизу вверх: counts - светодиодов в рядах N1, N2, ... (нижний первый), остаток до total образует
 // последний (верхний) ряд. Ряды идут слева направо, каждый центрируется; шаг между светодиодами одинаковый во всех рядах
-// (у конуса верхние ряды уже), gap - расстояние между рядами в шагах светодиода. Ось Y направлена вниз, как в кадре камеры:
+// (у конуса верхние ряды уже), gap - расстояние между рядами в шагах светодиода (в интерфейсе по умолчанию 3: так точки
+// разных рядов не сливаются и их удобно править вручную). Ось Y направлена вниз, как в кадре камеры:
 // нижний ряд получает наибольший Y (так считает эффект «огонь»). Возвращает {pts, rows} или {error}.
 function spiralLayout(counts, total, gap) {
   if (!Number.isInteger(total) || total < 1) return { error: 'Нет светодиодов' };
-  if (!Number.isFinite(gap) || gap < 0.2 || gap > 5) return { error: 'Расстояние между рядами: от 0,2 до 5 шагов' };
+  if (!Number.isFinite(gap) || gap < 0.2 || gap > 10) return { error: 'Расстояние между рядами: от 0,2 до 10 шагов' };
   let used = 0;
   for (let i = 0; i < counts.length; i++) {
     const n = counts[i];
@@ -666,7 +667,7 @@ function spiralLayout(counts, total, gap) {
   return { pts, rows };
 }
 
-const SPIRAL_KEY = 'gt-spiral';
+const SPIRAL_KEY = 'gt-spiral-v2';   // v2: расстояние между рядами по умолчанию 3; значение из прежней версии (1) не восстанавливается
 const spiral = { counts: [''] };   // значения полей N1, N2... как введены (строки)
 
 function spiralRead() {
@@ -728,10 +729,12 @@ async function spiralBuild() {
 
 function initSpiral() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SPIRAL_KEY) || 'null');
+    const v2 = JSON.parse(localStorage.getItem(SPIRAL_KEY) || 'null');
+    const old = v2 ? null : JSON.parse(localStorage.getItem('gt-spiral') || 'null');   // прежняя версия: берём только ряды
+    const saved = v2 || old;
     if (saved && Array.isArray(saved.counts) && saved.counts.length >= 1 && saved.counts.length <= 60) {
       spiral.counts = saved.counts.map((v) => String(v));
-      $('spGap').value = saved.gap;
+      if (v2 && Number(v2.gap) >= 0.2 && Number(v2.gap) <= 10) $('spGap').value = v2.gap;
     }
   } catch (e) { /* без сохранённого просто пустые поля */ }
   $('spAdd').addEventListener('click', () => {

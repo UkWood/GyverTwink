@@ -407,6 +407,7 @@ try {
 
   console.log('схема «спираль»');
   check(await page.isVisible('#spiralCard') && await page.isDisabled('#spBuild'), 'карточка схемы есть, строить пока нечего (поле N1 пусто)');
+  check((await page.$eval('#spGap', (e) => e.value)) === '3', 'расстояние между рядами по умолчанию 3 (ряды разведены для удобной правки)');
   for (let i = 0; i < 3; i++) await page.click('#spAdd');
   const spVals = [30, 28, 26, 24];
   for (let i = 0; i < 4; i++) await page.fill('#spN' + (i + 1), String(spVals[i]));
@@ -445,6 +446,8 @@ try {
   }
   check(spOk, 'на гирлянде 5 рядов по 30, 28, 26, 24 и 12: каждый на своей высоте, по центру, слева направо');
   check(spYs.every((y, i) => i === 0 || y < spYs[i - 1]), 'ряды идут снизу вверх (нижний - с наибольшим Y)');
+  const spPitch = spWidths[0] / 29;
+  check(Math.abs((spYs[0] - spYs[1]) / spPitch - 3) < 0.3, 'расстояние между рядами втрое больше шага по ряду (' + ((spYs[0] - spYs[1]) / spPitch).toFixed(2) + ')');
   check(spWidths.every((w, i) => i === 0 || w <= spWidths[i - 1] + 1), 'конус: верхние ряды не шире нижних (ширины ' + spWidths.join(', ') + ')');
   check(await stateIs('mmw', Math.max(...spPts.map((q) => q.x)) - Math.min(...spPts.map((q) => q.x))), 'границы карты пересчитаны по новой схеме');
   await page.reload();
