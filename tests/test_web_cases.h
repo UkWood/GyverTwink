@@ -204,12 +204,26 @@ TEST(web_effect_get_and_edit) {
   CHECK_EQ(effs[4].scale, 50);   // соседние эффекты не тронуты
 }
 
+TEST(web_effect_show_makes_it_current_and_state_reports_it) {
+  resetAll();
+  curEff = 3;
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 3);
+  Resp r = webPost("/api/effect", {{"n", "24"}, {"show", "1"}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 24);   // выбранный эффект сразу становится текущим
+  CHECK_EQ(curEff, 24);
+  CHECK(!forceTmr.state());                          // без временного показа
+  forceTmr.restart();                                // показ по UDP (приложение) тоже виден в «Сейчас»
+  forceEff = 5;
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 5);
+}
+
 TEST(web_new_effects_use_their_own_settings_block) {
   resetAll();
   Resp r = webGet("/api/effect", {{"n", std::to_string(ACTIVE_PALETTES * 2 + 2)}});   // огонь
   CHECK_EQ(r.code, 200);
   CHECK_EQ(jnum(r, "n"), ACTIVE_PALETTES * 2 + 2);
-  CHECK_EQ(jnum(r, "fav"), 0);   // новые эффекты по умолчанию не в избранном
+  CHECK_EQ(jnum(r, "fav"), 1);   // новые эффекты по умолчанию в избранном (участвуют в переборе)
   CHECK_EQ(jnum(r, "scale"), effsX[2].scale);
   CHECK_EQ(jnum(r, "speed"), effsX[2].speed);
 
@@ -220,23 +234,28 @@ TEST(web_new_effects_use_their_own_settings_block) {
   CHECK(effsX[EXT_EFFECTS - 1].fav);
   CHECK_EQ(effsX[EXT_EFFECTS - 1].scale, 123);
   CHECK_EQ(effsX[EXT_EFFECTS - 1].speed, 45);
-  CHECK_EQ(forceEff, EFFECT_COUNT - 1);
+  CHECK_EQ(curEff, EFFECT_COUNT - 1);
   CHECK(EEfx.updates > 0);
   CHECK_EQ(EEeff.updates, 0);                        // блок старых эффектов не записывался
   CHECK(memcmp(before, effs, sizeof(effs)) == 0);
   CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
 }
 
-TEST(web_effect_show_forces_the_effect) {
+TEST(web_effect_show_makes_it_current_and_restarts_auto_timer) {
   resetAll();
+  forceTmr.restart();   // идущий показ по UDP отменяется выбором
+  cfg.autoCh = 1;
+  switchTmr.setPrd(60000);
+  switchTmr.restart();
   Resp r = webPost("/api/effect", {{"n", "14"}, {"show", "1"}});
   CHECK_EQ(r.code, 200);
+  CHECK_EQ(curEff, 14);
   CHECK_EQ(forceEff, 14);
-  CHECK(forceTmr.state());
-  CHECK_EQ(EEeff.updates, 0);   // только показ, настройки не менялись
-  forceTmr.stop();
-  webPost("/api/effect", {{"n", "2"}, {"show", "0"}});
   CHECK(!forceTmr.state());
+  CHECK(switchTmr.state());
+  CHECK_EQ(EEeff.updates, 0);   // только выбор, настройки не менялись
+  webPost("/api/effect", {{"n", "2"}, {"show", "0"}});
+  CHECK_EQ(curEff, 14);         // show=0 текущий эффект не меняет
 }
 
 TEST(web_effect_index_and_values_are_checked) {

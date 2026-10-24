@@ -139,3 +139,14 @@ test('спираль: ошибки ввода понятны и ничего н�
   }
   assert.equal(app.spiralLayout([20], 20, 1).error, undefined);   // сумма ровно S
 });
+
+test('flipVertical зеркалит Y внутри занятой высоты и не трогает X', () => {
+  const pts = [{ x: 10, y: 20 }, { x: 50, y: 20 }, { x: 30, y: 80 }, { x: 31, y: 50 }];
+  const f = app.flipVertical(pts);
+  assert.deepEqual(f.map((p) => p.x), [10, 50, 30, 31]);
+  assert.deepEqual(f.map((p) => p.y), [80, 80, 20, 50]);
+  assert.deepEqual(app.flipVertical(f), pts);   // двойной переворот возвращает исходное
+  assert.deepEqual(app.flipVertical([]), []);
+  assert.deepEqual(app.flipVertical([{ x: 5, y: 7 }]), [{ x: 5, y: 7 }]);
+  assert.equal(pts[0].y, 20);   // исходный массив не изменён
+});

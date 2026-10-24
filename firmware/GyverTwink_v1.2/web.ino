@@ -77,7 +77,7 @@ static void webSendState() {
            "\"offOn\":%d,\"offMin\":%u,\"maxMa\":%u,\"cur\":%u,\"count\":%d,\"heap\":%u}",
            FW_VERSION, (unsigned)cfg.ledAm, LED_MAX, cfg.power ? 1 : 0, (unsigned)cfg.bright, cfg.autoCh ? 1 : 0,
            cfg.rndCh ? 1 : 0, (unsigned)cfg.prdCh, cfg.turnOff ? 1 : 0, (unsigned)cfg.offTmr, (unsigned)pwr.maxMa,
-           (unsigned)curEff, EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
+           (unsigned)(forceTmr.state() ? forceEff : curEff), EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
   webJson(200, b);
 }
 
@@ -292,7 +292,7 @@ static void handleEffectGet() {
   if (webEffectArg(n)) webSendEffect(n);
 }
 
-// POST /api/effect: n и любые из fav, scale, speed; show=1 - показать этот эффект (как выбор в приложении)
+// POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа)
 static void handleEffectPost() {
   if (!webAllowed()) return;
   long n, fav, scale, speed, show;
@@ -310,8 +310,10 @@ static void handleEffectPost() {
   if (rp > 0) effAt(n).speed = speed;
   if (rf > 0 || rs > 0 || rp > 0) effSave(n);
   if (rw > 0 && show) {
-    forceEff = n;
-    forceTmr.restart();
+    forceTmr.stop();
+    forceEff = n;   // и цель правок по UDP остаётся этим же эффектом
+    curEff = n;
+    if (cfg.autoCh) switchTmr.restart();   // отсчёт автосмены начинается заново
   }
   webSendEffect(n);
 }

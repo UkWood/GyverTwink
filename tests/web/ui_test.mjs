@@ -167,8 +167,9 @@ try {
   check((await page.$$('#effList button')).length === 28, '28 эффектов в списке (22 палитры и 6 новых)');
   check(await page.isHidden('#effEditor'), 'редактор скрыт, пока эффект не выбран');
   await page.click('#eff-7');
-  check(await stateIs('force', 1), 'выбор эффекта запускает его показ');
-  check(state.forceEff === 7, 'показывается эффект 7');
+  check(await stateIs('curEff', 7), 'выбор эффекта делает его текущим');
+  check(await stateIs('force', 0), 'временного показа нет');
+  check(await until(async () => (await page.textContent('#cur')).startsWith('7.')), '«Сейчас» показывает выбранный эффект');
   check(await until(async () => (await page.textContent('#effName')).startsWith('7.')), 'в редакторе название эффекта');
   await page.uncheck('#effFav');
   check(await stateIs('fav', 0), 'флаг «избранное» снят');
@@ -177,7 +178,7 @@ try {
   await setRange('#effSpeed', 200);
   check(await stateIs('speed', 200), 'скорость эффекта 200');
   await page.click('#eff-3');
-  check(await until(() => state.forceEff === 3), 'переключение на другой эффект');
+  check(await stateIs('curEff', 3), 'переключение на другой эффект');
   check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '50'), 'у эффекта 3 свои значения (масштаб 50)');
   await page.click('#eff-7');
   check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '77'), 'настройки эффекта 7 сохранились');
@@ -185,12 +186,14 @@ try {
   console.log('новые эффекты');
   check((await page.textContent('#effHint')) === '', 'у обычного эффекта подсказки нет');
   await page.click('#eff-24');   // огонь
-  check(await until(() => state.forceEff === 24), 'новый эффект показывается');
+  check(await stateIs('curEff', 24), 'новый эффект становится текущим');
   check(await until(async () => (await page.textContent('#effName')).startsWith('24.')), 'в редакторе название нового эффекта');
   check((await page.textContent('#effHint')).includes('Масштаб'), 'у нового эффекта есть подсказка про масштаб и скорость');
-  check(await until(async () => (await page.$eval('#effFav', (e) => e.checked)) === false), 'новый эффект по умолчанию не в избранном');
+  check(await until(async () => (await page.$eval('#effFav', (e) => e.checked)) === true), 'новый эффект по умолчанию в избранном');
+  await page.uncheck('#effFav');
+  check(await stateIs('fav', 0), 'новый эффект можно убрать из избранного');
   await page.check('#effFav');
-  check(await stateIs('fav', 1), 'новый эффект можно добавить в избранное');
+  check(await stateIs('fav', 1), 'новый эффект можно вернуть в избранное');
   await setRange('#effScale', 120);
   check(await stateIs('scale', 120), 'масштаб нового эффекта 120');
   await page.click('#eff-7');
@@ -425,6 +428,11 @@ try {
   check(await until(async () => !(await page.textContent('#cInfo')).includes('несохранённые')), 'схему можно отменить, как любую правку');
   await page.click('#spBuild');
   check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'построена заново');
+  await page.click('#spFlip');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'переворот карты - несохранённая правка');
+  await page.click('#cUndo');
+  check(await until(async () => !(await page.textContent('#cInfo')).includes('несохранённые')), 'переворот можно отменить');
+  await page.click('#spBuild');
   await page.click('#cSave');
   check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'схема сохранена на гирлянду');
   r = await api('GET', '/api/xy');
@@ -450,6 +458,12 @@ try {
   check(Math.abs((spYs[0] - spYs[1]) / spPitch - 3) < 0.3, 'расстояние между рядами втрое больше шага по ряду (' + ((spYs[0] - spYs[1]) / spPitch).toFixed(2) + ')');
   check(spWidths.every((w, i) => i === 0 || w <= spWidths[i - 1] + 1), 'конус: верхние ряды не шире нижних (ширины ' + spWidths.join(', ') + ')');
   check(await stateIs('mmw', Math.max(...spPts.map((q) => q.x)) - Math.min(...spPts.map((q) => q.x))), 'границы карты пересчитаны по новой схеме');
+  await page.click('#spFlip');
+  await page.click('#cSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'перевёрнутая карта сохранена');
+  r = await api('GET', '/api/xy');
+  const flipY = (i) => parseInt(r.json.xy.substr(i * 4 + 2, 2), 16);
+  check(flipY(0) === spYs[4] && flipY(119) === spYs[0], 'ряды зеркально поменялись местами');
   await page.reload();
   await page.click('[data-tab=coords]');
   check(await until(async () => (await page.$eval('#spN1', (e) => e.value)) === '30' && (await page.$eval('#spN4', (e) => e.value)) === '24'), 'введённые ряды запомнены в браузере');

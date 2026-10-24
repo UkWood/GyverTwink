@@ -253,7 +253,7 @@ async function selectEffect(n) {
   for (const b of document.querySelectorAll('#effList button')) b.classList.toggle('sel', Number(b.dataset.n) === n);
   $('effEditor').hidden = false;
   try {
-    // show=1: прошивка сразу показывает этот эффект
+    // show=1: прошивка делает этот эффект текущим
     fillEffect(await api.post('/api/effect', { n, show: 1 }));
   } catch (e) {
     toast(e.message);
@@ -667,6 +667,18 @@ function spiralLayout(counts, total, gap) {
   return { pts, rows };
 }
 
+// Карта, перевёрнутая по вертикали: Y зеркалится внутри занятой высоты (min + max − y), X не меняется.
+// Нужна, если на ленте физически первый светодиод внизу, а схема построена наоборот (или камера видела ленту вверх ногами).
+function flipVertical(pts) {
+  if (!pts.length) return [];
+  let lo = 255, hi = 0;
+  for (const p of pts) {
+    if (p.y < lo) lo = p.y;
+    if (p.y > hi) hi = p.y;
+  }
+  return pts.map((p) => ({ x: p.x, y: clamp255(lo + hi - p.y) }));
+}
+
 const SPIRAL_KEY = 'gt-spiral-v2';   // v2: расстояние между рядами по умолчанию 3; значение из прежней версии (1) не восстанавливается
 const spiral = { counts: [''] };   // значения полей N1, N2... как введены (строки)
 
@@ -727,6 +739,16 @@ async function spiralBuild() {
   toast('Схема построена: рядов ' + r.rows.length + '. Проверь карту и нажми «Сохранить на гирлянду»', true);
 }
 
+function spiralFlip() {
+  if (!coords.pts.length) { toast('Карта пока пустая'); return; }
+  coords.pts = flipVertical(coords.pts);
+  coords.est = new Set(coords.est);
+  coordsSetDirty(true);
+  coordsSync();
+  coordsLedLight();
+  toast('Карта перевёрнута по вертикали. Проверь её и нажми «Сохранить на гирлянду»', true);
+}
+
 function initSpiral() {
   try {
     const v2 = JSON.parse(localStorage.getItem(SPIRAL_KEY) || 'null');
@@ -749,6 +771,7 @@ function initSpiral() {
   });
   $('spGap').addEventListener('input', spiralInfo);
   $('spBuild').addEventListener('click', spiralBuild);
+  $('spFlip').addEventListener('click', spiralFlip);
   document.addEventListener('gt-tab', (e) => { if (e.detail === 'coords') setTimeout(spiralInfo, 300); });
   spiralRender();
 }
@@ -1479,4 +1502,4 @@ function startApp() {
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, spiralLayout, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, spiralLayout, flipVertical, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };

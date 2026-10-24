@@ -68,7 +68,7 @@
       <div class="row"><label for="effScale">Масштаб</label><input id="effScale" type="range" min="0" max="255"><span class="val" id="effScale-val"></span></div>
       <div class="row"><label for="effSpeed">Скорость</label><input id="effSpeed" type="range" min="0" max="255"><span class="val" id="effSpeed-val"></span></div>
       <p class="hint" id="effHint"></p>
-      <p class="hint">Выбранный эффект показывается 30 секунд, потом лента вернётся к обычной смене.</p>
+      <p class="hint">Выбранный эффект сразу становится текущим (видно в «Сейчас» на вкладке «Управление»). Автосмена, если включена, отсчитывает период заново.</p>
     </div>
   </section>
 
@@ -208,8 +208,8 @@
       </div>
       <div class="row"><label for="spGap">Расстояние между рядами, в шагах светодиода</label><input id="spGap" type="number" min="0.2" max="10" step="0.1" value="3" inputmode="decimal"></div>
       <p class="hint" id="spInfo"></p>
-      <div class="row"><button id="spBuild" class="btn" disabled>Построить схему</button></div>
-      <p class="hint">Схема попадёт на карту как несохранённая правка: проверь её, при необходимости поправь точки и нажми «Сохранить на гирлянду». S — число светодиодов с вкладки «Управление».</p>
+      <div class="row btnrow"><button id="spBuild" class="btn" disabled>Построить схему</button><button id="spFlip" class="btn secondary">Перевернуть карту по вертикали</button></div>
+      <p class="hint">Схема попадёт на карту как несохранённая правка: проверь её, при необходимости поправь точки и нажми «Сохранить на гирлянду». S — число светодиодов с вкладки «Управление». «Перевернуть карту по вертикали» зеркалит по высоте всю текущую карту (низ становится верхом, X не меняется): так можно поменять, какой край считать низом для эффектов вроде «Огонь».</p>
     </div>
   </section>
 </main>
