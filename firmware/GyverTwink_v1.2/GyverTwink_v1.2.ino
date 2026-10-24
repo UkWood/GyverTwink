@@ -27,7 +27,7 @@
 
 #define LED_PIN D1      // пин ленты
 #define LED_TYPE WS2812 // чип ленты
-#define LED_ORDER GRB   // порядок цветов ленты
+#define LED_ORDER RGB   // порядок байт у FastLED не меняем: порядок цветов ленты - настройка в вебе (colorder.ino), по умолчанию GRB
 #define LED_MAX 1000    // макс. светодиодов (не меньше XY_BASE, см. types.h)
 #define EEPROM_SIZE 2560   // размер EEPROM (ограничение ESP8266 - 4096); хватает ли его блокам, проверяет static_assert ниже
 
@@ -105,11 +105,15 @@ EEManager EEguard(guard);
 Fire2 fire2;
 EEManager EEfire2(fire2);
 
-// все блоки EEPROM (11 штук, у каждого ещё байт-ключ) должны помещаться в EEPROM_SIZE; XY_BASE и LED_MAX связаны блоком координат
+// все блоки EEPROM (12 штук, у каждого ещё байт-ключ) должны помещаться в EEPROM_SIZE; XY_BASE и LED_MAX связаны блоком координат
 static_assert(LED_MAX >= XY_BASE, "LED_MAX не может быть меньше XY_BASE");
 static_assert(sizeof(PortalCfg) + sizeof(Cfg) + sizeof(effs) + sizeof(MM) + sizeof(byte[XY_BASE][2]) + sizeof(Pwr) + sizeof(effsX) + sizeof(Sched) +
-                  sizeof(Guard) + sizeof(Fire2) + sizeof(byte[LED_MAX - XY_BASE][2]) + 11 <= EEPROM_SIZE,
+                  sizeof(Guard) + sizeof(Fire2) + sizeof(byte[LED_MAX - XY_BASE][2]) + sizeof(ColorOrder) + 12 <= EEPROM_SIZE,
               "блоки EEPROM не помещаются в EEPROM_SIZE");
+
+// порядок цветов ленты (colorder.ino): тоже отдельный блок в конце
+ColorOrder colorOrder;
+EEManager EEcolor(colorOrder);
 
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
@@ -164,6 +168,8 @@ void setup() {
   fire2Defaults(fire2);   // значения по умолчанию, если блока ещё нет
   EEfire2.begin(EEguard.nextAddr(), 'a');
   EExyHi.begin(EEfire2.nextAddr(), (uint8_t)(LED_MAX - XY_BASE));   // координаты светодиодов после XY_BASE-го
+  EEcolor.begin(EExyHi.nextAddr(), 'a');   // порядок цветов ленты
+  colorOrderApply();
   guard.token[TOKEN_MAX] = '\0';   // защита от мусора в EEPROM
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
@@ -190,6 +196,7 @@ void loop() {
   EEsched.tick();
   EEguard.tick();
   EEfire2.tick();
+  EEcolor.tick();
 
   parsing();  // парсим udp
   webTick();  // веб-интерфейс
@@ -214,7 +221,7 @@ void loop() {
     offTmr.stop();
     cfg.turnOff = false;
     cfg.power = false;
-    strip->showLeds(0);
+    ledsShow(0);
     EEcfg.update();
     DEBUGLN("Off tmr");
   }

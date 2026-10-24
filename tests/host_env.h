@@ -35,9 +35,10 @@ Pwr pwr;
 Effects effs[ACTIVE_PALETTES * 2];
 Effects effsX[EXT_EFFECTS];
 Fire2 fire2;
+ColorOrder colorOrder;
 Sched sched;
 Guard guard;
-EEManager EEcfg(cfg), EExy(*(byte (*)[XY_BASE][2])xy), EExyHi(*(byte (*)[LED_MAX - XY_BASE][2])&xy[XY_BASE]), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched), EEguard(guard), EEfire2(fire2);
+EEManager EEcfg(cfg), EExy(*(byte (*)[XY_BASE][2])xy), EExyHi(*(byte (*)[LED_MAX - XY_BASE][2])&xy[XY_BASE]), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched), EEguard(guard), EEfire2(fire2), EEcolor(colorOrder);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
 // порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
 EncButtonStub btn;
@@ -53,6 +54,7 @@ byte curEff = 0;
 byte forceEff = 0;
 
 // ---- тестируемый код ----
+#include "../firmware/GyverTwink_v1.2/colorder.ino"
 #include "../firmware/GyverTwink_v1.2/power.ino"
 #include "../firmware/GyverTwink_v1.2/switcher.ino"
 #include "../firmware/GyverTwink_v1.2/settings.ino"

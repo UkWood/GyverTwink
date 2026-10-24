@@ -21,5 +21,5 @@ void fadeBlink(CRGB color) {
     delay(20);
   }
   strip->clearLedData();
-  strip->showLeds(0);
+  ledsShow(0);
 }

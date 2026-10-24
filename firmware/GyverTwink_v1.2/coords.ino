@@ -21,7 +21,7 @@ void ledHighlight(int i) {
   calibF = true;
   strip->clearLedData();
   leds[i] = CRGB::White;
-  strip->showLeds(200);
+  ledsShow(200);
   hlTmr.restart();   // страница могла закрыться: через минуту подсветка гаснет сама
 }
 
@@ -29,7 +29,7 @@ void ledHighlightOff() {
   hlTmr.stop();
   calibF = false;
   strip->clearLedData();
-  strip->showLeds(0);
+  ledsShow(0);
 }
 
 // записать координаты и границы в EEPROM

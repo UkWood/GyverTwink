@@ -5,7 +5,7 @@ void button() {
   if (btn.hasClicks(1)) {
     DEBUGLN("1x click - power");
     cfg.power = !cfg.power;
-    if (!cfg.power) strip->showLeds(0);
+    if (!cfg.power) ledsShow(0);
     EEcfg.update();
   }
   
@@ -29,9 +29,9 @@ void button() {
       bri = constrain(bri, 0, 255);      
       cfg.bright = bri;
       if (bri == 255) {
-        strip->showLeds(0);
+        ledsShow(0);
         delay(100);
-        strip->showLeds(limitedBright(bri));
+        ledsShow(limitedBright(bri));
       }
       EEcfg.update();
     }

@@ -74,10 +74,10 @@ static void webSendState() {
   char b[320];
   snprintf(b, sizeof(b),
            "{\"fw\":\"%s\",\"ledAm\":%u,\"ledMax\":%d,\"power\":%d,\"bright\":%u,\"auto\":%d,\"rnd\":%d,\"period\":%u,"
-           "\"offOn\":%d,\"offMin\":%u,\"maxMa\":%u,\"cur\":%u,\"count\":%d,\"heap\":%u}",
+           "\"offOn\":%d,\"offMin\":%u,\"maxMa\":%u,\"cur\":%u,\"count\":%d,\"heap\":%u,\"order\":%u}",
            FW_VERSION, (unsigned)cfg.ledAm, LED_MAX, cfg.power ? 1 : 0, (unsigned)cfg.bright, cfg.autoCh ? 1 : 0,
            cfg.rndCh ? 1 : 0, (unsigned)cfg.prdCh, cfg.turnOff ? 1 : 0, (unsigned)cfg.offTmr, (unsigned)pwr.maxMa,
-           (unsigned)(forceTmr.state() ? forceEff : curEff), EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
+           (unsigned)(forceTmr.state() ? forceEff : curEff), EFFECT_COUNT, (unsigned)ESP.getFreeHeap(), (unsigned)colorOrder.order);
   webJson(200, b);
 }
 
@@ -241,7 +241,7 @@ static void handleState() {
   webSendState();
 }
 
-// POST /api/set: любые из power, bright, auto, rnd, period, offOn, offMin, maxMa, ledAm.
+// POST /api/set: любые из power, bright, auto, rnd, period, offOn, offMin, maxMa, ledAm, order (порядок цветов ленты 0-5, см. types.h).
 // Сначала проверяются все значения, и только потом применяются: неверный запрос ничего не меняет.
 static void handleSet() {
   if (!webAllowed()) return;
@@ -251,7 +251,7 @@ static void handleSet() {
   };
   static const Item items[] = {
     {"ledAm", 1, LED_MAX}, {"power", 0, 1},    {"bright", 0, 255},  {"auto", 0, 1},   {"rnd", 0, 1},
-    {"period", 1, 255},    {"offOn", 0, 1},    {"offMin", 1, 250},  {"maxMa", 0, 25500},
+    {"period", 1, 255},    {"offOn", 0, 1},    {"offMin", 1, 250},  {"maxMa", 0, 25500}, {"order", 0, ORDER_COUNT - 1},
   };
   const int count = sizeof(items) / sizeof(items[0]);
   long val[sizeof(items) / sizeof(items[0])];
@@ -276,6 +276,7 @@ static void handleSet() {
   if (has[6]) setOffTimer(val[6]);
   if (has[7]) setOffMinutes(val[7]);
   if (has[8]) setMaxMa(val[8]);
+  if (has[9]) setColorOrder(val[9]);
   webSendState();
 }
 
@@ -301,10 +302,10 @@ static void handleEffectGet() {
 
 // POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа).
 // Для «Огня v2» (n = FIRE2_EFF) ещё shape, sparks, flicker (0-255) и цвет уровня жара: lv (0-5) вместе с любыми из r, g, b (0-255);
-// у других эффектов эти поля - ошибка 400
+// и reset=1 - вернуть цвета уровней к значениям по умолчанию; у других эффектов эти поля - ошибка 400
 static void handleEffectPost() {
   if (!webAllowed()) return;
-  long n, fav, scale, speed, show, shape, sparks, flicker, lv, cr, cg, cb;
+  long n, fav, scale, speed, show, shape, sparks, flicker, lv, cr, cg, cb, rst;
   if (!webEffectArg(n)) return;
   int rf = webArgInt("fav", 0, 1, fav);
   int rs = webArgInt("scale", 0, 255, scale);
@@ -317,16 +318,17 @@ static void handleEffectPost() {
   int rr = webArgInt("r", 0, 255, cr);
   int rg = webArgInt("g", 0, 255, cg);
   int rb = webArgInt("b", 0, 255, cb);
-  const int rc[] = {rf, rs, rp, rw, rh, rk, rl, rv, rr, rg, rb};
-  static const char* const names[] = {"fav", "scale", "speed", "show", "shape", "sparks", "flicker", "lv", "r", "g", "b"};
-  for (byte i = 0; i < 11; i++) {
+  int rz = webArgInt("reset", 0, 1, rst);
+  const int rc[] = {rf, rs, rp, rw, rh, rk, rl, rv, rr, rg, rb, rz};
+  static const char* const names[] = {"fav", "scale", "speed", "show", "shape", "sparks", "flicker", "lv", "r", "g", "b", "reset"};
+  for (byte i = 0; i < 12; i++) {
     if (rc[i] < 0) {
       webError(400, names[i]);
       return;
     }
   }
   if (n != FIRE2_EFF) {   // поля «Огня v2» чужому эффекту не принадлежат
-    for (byte i = 4; i < 11; i++) {
+    for (byte i = 4; i < 12; i++) {
       if (rc[i] > 0) {
         webError(400, names[i]);
         return;
@@ -347,7 +349,9 @@ static void handleEffectPost() {
     if (rg > 0) fire2.col[lv][1] = cg;
     if (rb > 0) fire2.col[lv][2] = cb;
   }
-  bool changed = false;
+  bool doReset = rz > 0 && rst == 1;
+  if (doReset) memcpy(fire2.col, Fire2().col, sizeof(fire2.col));   // цвета по умолчанию (фото костра)
+  bool changed = doReset;
   for (byte i = 0; i < 11; i++) {
     if (i != 3 && i != 7 && rc[i] > 0) changed = true;   // show и lv сами по себе ничего не меняют
   }

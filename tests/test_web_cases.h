@@ -108,6 +108,45 @@ TEST(web_set_applies_every_parameter) {
   CHECK_EQ(jnum(r, "bright"), 180);      // в ответе уже новое состояние
 }
 
+TEST(web_set_color_order_and_state_reports_it) {
+  resetAll();
+  CHECK_EQ(jnum(webGet("/api/state"), "order"), ORDER_GRB);
+  Resp r = webPost("/api/set", {{"order", "4"}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(colorOrder.order, 4);
+  CHECK_EQ(jnum(r, "order"), 4);
+  CHECK(EEcolor.updates > 0);
+  EEcolor.updates = 0;
+  for (const char* bad : {"6", "-1", "x", ""}) {
+    r = webPost("/api/set", {{"bright", "77"}, {"order", bad}});
+    CHECK_EQ(r.code, 400);
+    CHECK(r.body.find("\"error\":\"order\"") != std::string::npos);
+  }
+  CHECK_EQ(colorOrder.order, 4);   // ошибка ничего не применила
+  CHECK_EQ(EEcolor.updates, 0);
+  CHECK(cfg.bright != 77);
+}
+
+TEST(web_fire2_reset_restores_default_colours_only) {
+  resetAll();
+  Fire2 def;
+  fire2.col[2][0] = 1;
+  fire2.col[5][1] = 2;
+  fire2.shape = 7;
+  Resp r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"reset", "0"}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(fire2.col[2][0], 1);   // reset=0 ничего не делает
+  EEfire2.updates = 0;
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"reset", "1"}});
+  CHECK_EQ(r.code, 200);
+  CHECK(memcmp(fire2.col, def.col, sizeof(def.col)) == 0);
+  CHECK_EQ(fire2.shape, 7);       // форма и остальное не тронуты
+  CHECK(EEfire2.updates > 0);
+  CHECK(r.body.find("\"cols\":\"000000460600be1200ff4600ff8c08ffcd3c\"") != std::string::npos);
+  CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"reset", "2"}}).code, 400);
+  CHECK_EQ(webPost("/api/effect", {{"n", "2"}, {"reset", "1"}}).code, 400);   // у других эффектов сброса цветов нет
+}
+
 TEST(web_set_rejects_bad_values_and_changes_nothing) {
   resetAll();
   const char* bad[][2] = {{"bright", "256"}, {"bright", "-1"}, {"bright", "abc"}, {"bright", ""}, {"bright", "1.5"},

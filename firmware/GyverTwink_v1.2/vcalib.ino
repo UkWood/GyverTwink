@@ -50,7 +50,7 @@ void vcalibStart(uint16_t delaySec, uint16_t stepMs) {
   vcRun = true;
   calibF = true;   // эффекты на время серии отключены
   strip->clearLedData();
-  strip->showLeds(0);
+  ledsShow(0);
 }
 
 void vcalibStop() {
@@ -59,7 +59,7 @@ void vcalibStop() {
   vcFrame = -1;
   calibF = false;
   strip->clearLedData();
-  strip->showLeds(0);
+  ledsShow(0);
 }
 
 static void vcRender(int frame) {
@@ -67,12 +67,12 @@ static void vcRender(int frame) {
   if (frame == 1) {
     int m = min((int)vcCount, VC_MARKER_LEDS);
     for (int k = 0; k < m; k++) leds[k * vcCount / m] = CRGB::White;
-    strip->showLeds(limitedBright(255));   // лимит тока действует и здесь
+    ledsShow(limitedBright(255));   // лимит тока действует и здесь
   } else if (frame >= 3) {
     leds[frame - 3] = CRGB::White;
-    strip->showLeds(limitedBright(255));
+    ledsShow(limitedBright(255));
   } else {
-    strip->showLeds(0);
+    ledsShow(0);
   }
 }
 

@@ -79,9 +79,9 @@ int main(int argc, char** argv) {
     char st[400];
     std::snprintf(st, sizeof(st),
                   "STATE bright=%d curEff=%d ledAm=%d maxMa=%d power=%d auto=%d rnd=%d period=%d offOn=%d offMin=%d force=%d forceEff=%d "
-                  "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d ota=%d count=%d",
+                  "fav=%d scale=%d speed=%d calib=%d lit=%d mmw=%d mmh=%d ota=%d count=%d order=%d",
                   cfg.bright, curEff, cfg.ledAm, pwr.maxMa, cfg.power, cfg.autoCh, cfg.rndCh, cfg.prdCh, cfg.turnOff, cfg.offTmr,
-                  forceTmr.state(), forceEff, effAt(forceEff).fav, effAt(forceEff).scale, effAt(forceEff).speed, calibF, lit, mm.w, mm.h, otaOpen() ? 1 : 0, EFFECT_COUNT);
+                  forceTmr.state(), forceEff, effAt(forceEff).fav, effAt(forceEff).scale, effAt(forceEff).speed, calibF, lit, mm.w, mm.h, otaOpen() ? 1 : 0, EFFECT_COUNT, colorOrder.order);
     if (last != st) {
       last = st;
       std::printf("%s\n", st);

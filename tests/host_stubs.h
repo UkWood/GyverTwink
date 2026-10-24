@@ -705,8 +705,13 @@ struct CLEDController {
     for (int i = 0; i < count; i++) data[i] = CRGB();
   }
   void showColor(const CRGB&, uint8_t bri) { shown.push_back(bri); }
+  CRGB correction = CRGB(0xFF, 0xB0, 0xF0);   // последняя поправка цвета (setCorrection)
+  void setCorrection(const CRGB& c) { correction = c; }
+  int size() const { return count; }
+  CRGB sent[4];   // первые светодиоды в том виде, в каком они ушли на ленту в последнем showLeds (после перестановки порядка цветов)
   void showLeds(uint8_t bri = 255) {
     shown.push_back(bri);
+    for (int i = 0; i < 4 && i < count; i++) sent[i] = data[i];
     if (!record) return;
     Frame f{fakeMillis(), bri, {}};
     for (int i = 0; i < count; i++) {
