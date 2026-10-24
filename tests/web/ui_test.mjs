@@ -533,6 +533,42 @@ try {
   check(await until(async () => (await page.$eval('#spN1', (e) => e.value)) === '30' && (await page.$eval('#spN4', (e) => e.value)) === '24'), 'введённые ряды запомнены в браузере');
   check(await fitsScreen(), 'вкладка «Координаты» со схемой помещается по ширине экрана 390 px');
   await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_spiral.png'), fullPage: true });
+
+  console.log('схема «соты»');
+  const hexPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../web/test/fixtures/gyvertwink-map-example.json');
+  const hexLib = require('../../web/hexmap.js');
+  check(await page.isVisible('#hexCard') && await page.isDisabled('#hxBuild'), 'карточка схемы «соты» есть, файл не выбран: строить нечего');
+  await page.setInputFiles('#hxFile', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"leds": []}') });
+  check(await until(async () => (await page.textContent('#hxInfo')).includes('gyvertwink_map')), 'чужой файл: понятное сообщение');
+  check(await page.isDisabled('#hxBuild'), 'чужой файл: строить нельзя');
+  await page.setInputFiles('#hxFile', hexPath);
+  check(await until(async () => (await page.textContent('#hxInfo')).includes('378 светодиодов') && (await page.textContent('#hxInfo')).includes('866 × 800 мм')), 'файл прочитан: 378 светодиодов, габариты 866 × 800 мм');
+  check((await page.textContent('#hxInfo')).includes('На гирлянде 120'), 'видно, что на гирлянде 120 светодиодов');
+  check(await page.isDisabled('#hxBuild') && await page.isVisible('#hxSet'), 'число не совпадает: строить нельзя, предложено поставить число светодиодов');
+  await page.click('#hxSet');
+  check(await stateIs('ledAm', 378), 'число светодиодов на гирлянде стало 378');
+  check(await until(async () => await page.isEnabled('#hxBuild')), 'число совпало: схему можно строить');
+  await page.click('#hxBuild');
+  check(await until(async () => (await page.textContent('#cInfo')).includes('несохранённые')), 'схема попала на карту как несохранённая правка');
+  check(await page.evaluate(() => coords.pts.length === 378 && coords.under.length === 54), 'на карте 378 точек и контур из 54 рёбер');
+  await page.uncheck('#hxOutline');
+  await page.check('#hxOutline');
+  await page.click('#cSave');
+  check(await until(async () => (await page.textContent('#toast')).includes('размер карты')), 'схема сохранена на гирлянду');
+  r = await api('GET', '/api/xy');
+  const hexExpect = hexLib.layoutHexMap(hexLib.parseHexMap(fs.readFileSync(hexPath, 'utf8')).map).pts;
+  let hexSame = r.json.n === 378;
+  for (let i = 0; i < 378; i++) {
+    const px = parseInt(r.json.xy.substr(i * 4, 2), 16), py = parseInt(r.json.xy.substr(i * 4 + 2, 2), 16);
+    hexSame = hexSame && px === hexExpect[i].x && py === hexExpect[i].y;
+  }
+  check(hexSame, 'на гирлянде точки схемы в том же порядке и на тех же местах, что в расчёте страницы');
+  check(await fitsScreen(), 'вкладка «Координаты» со схемой «соты» помещается по ширине экрана 390 px');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_hex.png'), fullPage: true });
+  await page.click('[data-tab=control]');
+  await setNumber('#ledAm', 120);   // как было до проверки
+  check(await stateIs('ledAm', 120), 'число светодиодов возвращено к 120');
+  await page.click('[data-tab=coords]');
   await page.click('[data-tab=control]');
   check(await stateIs('calib', 0), 'ушли с вкладки: подсветка выключена');
   check(await fitsScreen(), 'вкладка «Управление» по ширине помещается');
