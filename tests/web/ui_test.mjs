@@ -188,9 +188,11 @@ try {
   check(await until(() => state.forceEff === 24), 'новый эффект показывается');
   check(await until(async () => (await page.textContent('#effName')).startsWith('24.')), 'в редакторе название нового эффекта');
   check((await page.textContent('#effHint')).includes('Масштаб'), 'у нового эффекта есть подсказка про масштаб и скорость');
-  check(await until(async () => (await page.$eval('#effFav', (e) => e.checked)) === false), 'новый эффект по умолчанию не в избранном');
+  check(await until(async () => (await page.$eval('#effFav', (e) => e.checked)) === true), 'новый эффект по умолчанию в избранном');
+  await page.uncheck('#effFav');
+  check(await stateIs('fav', 0), 'новый эффект можно убрать из избранного');
   await page.check('#effFav');
-  check(await stateIs('fav', 1), 'новый эффект можно добавить в избранное');
+  check(await stateIs('fav', 1), 'новый эффект можно вернуть в избранное');
   await setRange('#effScale', 120);
   check(await stateIs('scale', 120), 'масштаб нового эффекта 120');
   await page.click('#eff-7');

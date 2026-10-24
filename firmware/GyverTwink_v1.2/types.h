@@ -56,7 +56,7 @@ inline void fxDefaults(Effects* fx) {
   static const byte sc[EXT_EFFECTS] = {50, 64, 50, 10, 40, 40};
   static const byte sp[EXT_EFFECTS] = {120, 160, 170, 140, 150, 150};
   for (byte i = 0; i < EXT_EFFECTS; i++) {
-    fx[i].fav = false;
+    fx[i].fav = true;   // новые эффекты сразу участвуют в автосмене и в переборе кнопкой
     fx[i].scale = sc[i];
     fx[i].speed = sp[i];
   }

@@ -77,7 +77,7 @@ static void webSendState() {
            "\"offOn\":%d,\"offMin\":%u,\"maxMa\":%u,\"cur\":%u,\"count\":%d,\"heap\":%u}",
            FW_VERSION, (unsigned)cfg.ledAm, LED_MAX, cfg.power ? 1 : 0, (unsigned)cfg.bright, cfg.autoCh ? 1 : 0,
            cfg.rndCh ? 1 : 0, (unsigned)cfg.prdCh, cfg.turnOff ? 1 : 0, (unsigned)cfg.offTmr, (unsigned)pwr.maxMa,
-           (unsigned)curEff, EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
+           (unsigned)(forceTmr.state() ? forceEff : curEff), EFFECT_COUNT, (unsigned)ESP.getFreeHeap());
   webJson(200, b);
 }
 

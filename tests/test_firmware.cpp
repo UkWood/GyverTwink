@@ -253,11 +253,11 @@ TEST(new_effect_settings_go_to_their_own_block) {
   CHECK_EQ(forceEff, ACTIVE_PALETTES * 2 + 2);
   Bytes r = lastOut();   // ответ с настройками нового эффекта
   CHECK_EQ(r.size(), 6);
-  CHECK(r[2] == 4 && r[3] == 0 && r[4] == effsX[2].scale && r[5] == effsX[2].speed);
-  send({4, 1, 1});
+  CHECK(r[2] == 4 && r[3] == 1 && r[4] == effsX[2].scale && r[5] == effsX[2].speed);
+  send({4, 1, 0});
   send({4, 2, 99});
   send({4, 3, 77});
-  CHECK(effsX[2].fav);
+  CHECK(!effsX[2].fav);
   CHECK_EQ(effsX[2].scale, 99);
   CHECK_EQ(effsX[2].speed, 77);
   CHECK(EEfx.updates > 0);
@@ -378,6 +378,7 @@ TEST(ack_short_packet_is_ignored) {
 TEST(switch_without_favorites_does_not_hang) {
   resetAll();
   for (auto& e : effs) e.fav = false;
+  for (auto& e : effsX) e.fav = false;
   curEff = 4;
   switchEff();
   CHECK_EQ(curEff, 4);
@@ -389,6 +390,7 @@ TEST(switch_without_favorites_does_not_hang) {
 TEST(switch_sequential_skips_non_favorites_and_wraps) {
   resetAll();
   for (auto& e : effs) e.fav = false;
+  for (auto& e : effsX) e.fav = false;
   effs[3].fav = effs[7].fav = true;
   curEff = 0;
   switchEff();
@@ -402,6 +404,7 @@ TEST(switch_sequential_skips_non_favorites_and_wraps) {
 TEST(switch_random_picks_only_favorites) {
   resetAll();
   for (auto& e : effs) e.fav = false;
+  for (auto& e : effsX) e.fav = false;
   effs[4].fav = effs[15].fav = true;
   cfg.rndCh = 1;
   bool saw4 = false, saw15 = false;
@@ -416,7 +419,8 @@ TEST(switch_random_picks_only_favorites) {
 
 TEST(switch_includes_new_effects_only_when_favorite) {
   resetAll();
-  for (auto& e : effs) e.fav = false;   // новые по умолчанию не избранные
+  for (auto& e : effs) e.fav = false;
+  for (auto& e : effsX) e.fav = false;   // (по умолчанию новые эффекты избранные, здесь проверяем флажок)
   effs[3].fav = true;
   for (int i = 0; i < 40; i++) {
     switchEff();

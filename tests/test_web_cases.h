@@ -204,12 +204,23 @@ TEST(web_effect_get_and_edit) {
   CHECK_EQ(effs[4].scale, 50);   // соседние эффекты не тронуты
 }
 
+TEST(web_state_cur_shows_the_forced_effect) {
+  resetAll();
+  curEff = 3;
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 3);
+  Resp r = webPost("/api/effect", {{"n", "24"}, {"show", "1"}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 24);   // «Сейчас» - то, что горит, а не фоновый текущий эффект
+  forceTmr.stop();
+  CHECK_EQ(jnum(webGet("/api/state"), "cur"), 3);
+}
+
 TEST(web_new_effects_use_their_own_settings_block) {
   resetAll();
   Resp r = webGet("/api/effect", {{"n", std::to_string(ACTIVE_PALETTES * 2 + 2)}});   // огонь
   CHECK_EQ(r.code, 200);
   CHECK_EQ(jnum(r, "n"), ACTIVE_PALETTES * 2 + 2);
-  CHECK_EQ(jnum(r, "fav"), 0);   // новые эффекты по умолчанию не в избранном
+  CHECK_EQ(jnum(r, "fav"), 1);   // новые эффекты по умолчанию в избранном (участвуют в переборе)
   CHECK_EQ(jnum(r, "scale"), effsX[2].scale);
   CHECK_EQ(jnum(r, "speed"), effsX[2].speed);
 
