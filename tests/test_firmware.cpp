@@ -185,10 +185,10 @@ TEST(calibration_index_is_checked) {
   resetAll();
   send({3, 0});
   CHECK(calibF);
-  send({3, 1, 5, 1, 9, 9});   // номер 501 > LED_MAX: игнорируется
+  send({3, 1, 10, 1, 9, 9});   // номер 1001 > LED_MAX: игнорируется
   CHECK_EQ(xy[0][0], 0);
   CHECK_EQ(xy[LED_MAX - 1][0], 0);
-  send({3, 1, 5, 0, 11, 22});   // номер 500: только сохранить координаты последнего (xy[499])
+  send({3, 1, 10, 0, 11, 22});   // номер 1000: только сохранить координаты последнего (xy[999])
   CHECK_EQ(xy[LED_MAX - 1][0], 11);
   CHECK_EQ(xy[LED_MAX - 1][1], 22);
   send({3, 1, 0, 3, 33, 44});   // номер 3: сохраняем координаты 2-го, зажигаем 3-й
@@ -356,9 +356,9 @@ TEST(ack_skips_debounce) {
 TEST(ack_reports_invalid_arguments_and_unknown_commands) {
   resetAll();
   int s = newSeq();
-  sendAck(s, {3, 1, 5, 1, 0, 0});   // номер светодиода 501
+  sendAck(s, {3, 1, 10, 1, 0, 0});   // номер светодиода 1001
   CHECK(lastOut() == (Bytes{'G', 'T', 6, 3, (uint8_t)s, 1}));
-  sendAck(s, {3, 1, 5, 1, 0, 0});   // повтор: тот же статус
+  sendAck(s, {3, 1, 10, 1, 0, 0});   // повтор: тот же статус
   CHECK(lastOut() == (Bytes{'G', 'T', 6, 3, (uint8_t)s, 1}));
   s = newSeq();
   sendAck(s, {4, 0, 200});
@@ -478,6 +478,25 @@ static void runEffect(int eff) {
   forceTmr.stop();
   fakeMillis() += 40;
   effects();
+}
+
+TEST(thousand_leds_work_in_udp_web_and_every_effect) {
+  resetAll();
+  send({2, 0, 10, 0});   // 1000 светодиодов по UDP
+  CHECK_EQ(cfg.ledAm, LED_MAX);
+  CHECK_EQ(stripObj.count, LED_MAX);
+  for (int i = 0; i < LED_MAX; i++) {
+    xy[i][0] = (i * 7) & 255;
+    xy[i][1] = (i * 13) & 255;
+  }
+  recalcBounds();
+  for (int e = 0; e < EFFECT_COUNT; e++) {
+    for (int f = 0; f < 3; f++) runEffect(e);
+    CHECK(leds[LED_MAX - 1].r + leds[LED_MAX - 1].g + leds[LED_MAX - 1].b >= 0);   // главное - без выхода за массивы (ASan/UBSan)
+  }
+  send({3, 0});
+  send({3, 1, 10, 0, 77, 88});   // калибровка доходит до последнего светодиода (после 500-го)
+  CHECK(xy[LED_MAX - 1][0] == 77 && xy[LED_MAX - 1][1] == 88);
 }
 
 TEST(effects_survive_zero_height_and_full_strip) {

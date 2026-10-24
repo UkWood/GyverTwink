@@ -28,7 +28,8 @@
 #define LED_PIN D1      // пин ленты
 #define LED_TYPE WS2812 // чип ленты
 #define LED_ORDER GRB   // порядок цветов ленты
-#define LED_MAX 500     // макс. светодиодов
+#define LED_MAX 1000    // макс. светодиодов (не меньше XY_BASE, см. types.h)
+#define EEPROM_SIZE 2560   // размер EEPROM (ограничение ESP8266 - 4096); хватает ли его блокам, проверяет static_assert ниже
 
 #define FW_VERSION "1.4"   // версия прошивки (показывается в веб-интерфейсе)
 
@@ -74,8 +75,10 @@ IPAddress myIP;
 Cfg cfg;
 EEManager EEcfg(cfg);
 
+// координаты: один массив в ОЗУ, в EEPROM два блока (первые XY_BASE светодиодов и остальные, блок EExyHi лежит в конце памяти)
 byte xy[LED_MAX][2];
-EEManager EExy(xy);
+EEManager EExy(*(byte (*)[XY_BASE][2])xy);
+EEManager EExyHi(*(byte (*)[LED_MAX - XY_BASE][2])&xy[XY_BASE]);
 
 MM mm;
 EEManager EEmm(mm);
@@ -101,6 +104,12 @@ EEManager EEguard(guard);
 // настройки «Огня v2» (effects.ino): самый последний блок
 Fire2 fire2;
 EEManager EEfire2(fire2);
+
+// все блоки EEPROM (11 штук, у каждого ещё байт-ключ) должны помещаться в EEPROM_SIZE; XY_BASE и LED_MAX связаны блоком координат
+static_assert(LED_MAX >= XY_BASE, "LED_MAX не может быть меньше XY_BASE");
+static_assert(sizeof(PortalCfg) + sizeof(Cfg) + sizeof(effs) + sizeof(MM) + sizeof(byte[XY_BASE][2]) + sizeof(Pwr) + sizeof(effsX) + sizeof(Sched) +
+                  sizeof(Guard) + sizeof(Fire2) + sizeof(byte[LED_MAX - XY_BASE][2]) + 11 <= EEPROM_SIZE,
+              "блоки EEPROM не помещаются в EEPROM_SIZE");
 
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
@@ -130,7 +139,7 @@ void setup() {
   delay(200);
   if (BTN_TOUCH) btn.setButtonLevel(HIGH);
   startStrip();
-  EEPROM.begin(2048); // с запасом!
+  EEPROM.begin(EEPROM_SIZE);
 
   // если это первый запуск или щелчок по кнопке, открываем портал
   if (EEwifi.begin(0, 'a') || checkButton()) portalRoutine();
@@ -144,8 +153,9 @@ void setup() {
 
   EEcfg.begin(EEwifi.nextAddr(), 'a');
   EEeff.begin(EEcfg.nextAddr(), 'a');
-  EEmm.begin(EEeff.nextAddr(), (uint8_t)LED_MAX);
-  EExy.begin(EEmm.nextAddr(), (uint8_t)LED_MAX);
+  // ключ этих двух блоков всегда (uint8_t)XY_BASE = 244, как раньше при LED_MAX = 500: от LED_MAX он зависеть не должен
+  EEmm.begin(EEeff.nextAddr(), (uint8_t)XY_BASE);
+  EExy.begin(EEmm.nextAddr(), (uint8_t)XY_BASE);
   EEpwr.begin(EExy.nextAddr(), 'a');
   fxDefaults(effsX);   // значения по умолчанию, если блока ещё нет (прочитанный из EEPROM их заменит)
   EEfx.begin(EEpwr.nextAddr(), 'a');
@@ -153,6 +163,7 @@ void setup() {
   EEguard.begin(EEsched.nextAddr(), 'a');
   fire2Defaults(fire2);   // значения по умолчанию, если блока ещё нет
   EEfire2.begin(EEguard.nextAddr(), 'a');
+  EExyHi.begin(EEfire2.nextAddr(), (uint8_t)(LED_MAX - XY_BASE));   // координаты светодиодов после XY_BASE-го
   guard.token[TOKEN_MAX] = '\0';   // защита от мусора в EEPROM
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
