@@ -13,7 +13,8 @@
 | Путь | Что |
 |---|---|
 | `firmware/GyverTwink_v1.2/` | Прошивка ESP8266 (Arduino, несколько `.ino`-вкладок) |
-| `processing/GyverTwink/` | Исходники Android-приложения (Processing) |
+| `processing/GyverTwink/` | Исходники приложения (Processing; один код для ПК и Android, флаг `androidMode`) |
+| `processing/GyverTwink_android/` | **Сгенерирован** `python3 tools/make_android_sketch.py` из предыдущей папки (без Video/Capture, `androidMode = true`, режим Android): готовый скетч для сборки APK. Руками не править; изменил `processing/GyverTwink` - запусти скрипт и закоммить обе папки (CI сверяет `--check`) |
 | GitHub Releases | Собранное приложение (APK); в дереве репозитория бинарников нет. Новый APK собирается вручную и прикладывается к релизу |
 | `libraries/` | Скопированные библиотеки: EncButton 1.x, EEManager, SimplePortal (FastLED подтягивается PlatformIO из реестра, версия в `platformio.ini`) |
 | `platformio.ini`, `.github/workflows/build.yml` | Сборка и CI |
