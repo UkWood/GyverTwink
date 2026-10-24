@@ -30,6 +30,7 @@ const FIELD_NAMES = {
   n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта',
   tz: 'часовой пояс', lat: 'широта', lon: 'долгота', days: 'дни недели', onT: 'тип включения', offT: 'тип выключения',
   onV: 'время или смещение включения', offV: 'время или смещение выключения', unix: 'время',
+  token: 'токен (8–32 символа: латиница, цифры, . _ ~ -)', udpLock: 'блокировка управления по UDP',
 };
 // не относящиеся к параметрам коды ошибок прошивки
 const ERROR_TEXT = {
@@ -44,6 +45,9 @@ const ERROR_TEXT = {
   off: 'Недопустимый запрос подсветки',
   'not found': 'Устройство не знает такого запроса (устаревшая прошивка?)',
   'ota-closed': 'Окно обновления закрыто. Нажми кнопку на гирлянде три раза подряд',
+  auth: 'Нужен токен доступа',
+  locked: 'Слишком много неверных попыток с этого устройства. Подожди минуту',
+  window: 'Окно закрыто: нажми кнопку на гирлянде три раза подряд',
   update: 'Гирлянда отклонила файл: это не подходящая прошивка или она не помещается',
 };
 function describeError(code, status) {
@@ -55,9 +59,23 @@ function describeError(code, status) {
 // ---------- запросы к устройству ----------
 // Все изменяющие запросы несут заголовок X-Requested-With: чужая страница в браузере не сможет
 // отправить такой запрос без CORS-предзапроса, на который устройство не отвечает (защита от CSRF).
+// Токен доступа (если защита включена) хранится в браузере и уходит в заголовке X-GT-Token.
+const TOKEN_KEY = 'gt-token';
+const tokenGet = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
+const tokenSet = (t) => { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* без хранилища токен придётся вводить заново */ } };
+const tokenClear = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ничего */ } };
+const guardUi = { needed: false, started: false };
+
 const api = {
   async call(method, path, params, body) {
+    if (guardUi.needed && path !== '/api/auth') {   // вход не выполнен: пока не вводят токен, запросы не уходят (неверные считаются попытками подбора)
+      const e = new Error(describeError('auth'));
+      e.code = 'auth';
+      throw e;
+    }
     const opt = { method, headers: { 'X-Requested-With': 'GyverTwink' } };
+    const tok = tokenGet();
+    if (tok) opt.headers['X-GT-Token'] = tok;
     let url = path;
     if (params) {
       const qs = new URLSearchParams(params).toString();
@@ -76,6 +94,7 @@ const api = {
     let data = {};
     try { data = await r.json(); } catch (e) { /* не JSON */ }
     if (!r.ok) {
+      if (data.error === 'auth') guardNeeded();
       const err = new Error(describeError(data.error, r.status));
       err.code = data.error;
       throw err;
@@ -157,6 +176,7 @@ function render(force) {
 }
 
 async function refresh(force) {
+  if (guardUi.needed) return;
   try {
     st = await api.get('/api/state');
     setConn(true);
@@ -876,6 +896,7 @@ async function otaCheckFile(file) {
 }
 
 function otaRender() {
+  guardRender();
   const s = ota.st;
   if (!s) return;
   const mm = Math.floor(s.left / 60);
@@ -1012,11 +1033,12 @@ function todayText(s) {
   return 'Сегодня: ' + part(s.onAt, 'включится') + ', ' + part(s.offAt, 'выключится') + '.';
 }
 
-const sched = { st: null, fetched: 0, timer: 0, tick: 0 };
+const sched = { st: null, fetched: 0, timer: 0, tick: 0, pending: 0 };   // pending: сколько отправок настроек в пути
 
 function schedFill(force) {
   const s = sched.st;
   if (!s) return;
+  if (sched.pending && !force) return;   // пользователь только что менял поля: устаревший ответ их не трогает (текущий придёт следом)
   setVal('sEn', s.en, force);
   setVal('sTz', s.tz / 60, force);
   const days = daysFromMask(s.days);
@@ -1102,14 +1124,18 @@ function schedCollect() {
 async function schedSend() {
   const p = schedCollect();
   if (!p) return;
+  sched.pending++;
   try {
     sched.st = await api.post('/api/schedule', p);
     sched.fetched = Date.now();
-    schedFill(false);
   } catch (e) {
     toast(e.message);
+    sched.pending--;
     schedLoad().then(() => schedFill(true));
+    return;
   }
+  sched.pending--;
+  schedFill(false);
 }
 
 // время и часовой пояс этого устройства -> гирлянде (тихо - при автоматической отправке)
@@ -1149,8 +1175,142 @@ function initSched() {
     schedLoad().finally(() => { sched.timer = setTimeout(poll, 5000); });
   };
   document.addEventListener('gt-tab', poll);
-  // при включённом расписании и неустановленном времени страница сама передаёт время (режим точки доступа)
+}
+
+// при включённом расписании и неустановленном времени страница сама передаёт время (режим точки доступа)
+function schedStart() {
   schedLoad().then(() => { if (sched.st && sched.st.en && !sched.st.synced) schedSyncTime(true); });
+}
+
+// ---------- защита токеном ----------
+// допустимый токен (как в прошивке): 8-32 символа из латинских букв, цифр и . _ ~ -
+const tokenValid = (s) => /^[A-Za-z0-9._~-]{8,32}$/.test(s);
+// случайный токен без похожих символов (0/O, 1/l/I); rand - источник случайных байт (по умолчанию crypto)
+function genToken(rand) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const fill = rand || ((a) => crypto.getRandomValues(a));
+  const limit = 256 - (256 % alphabet.length);   // отбрасываем хвост, чтобы символы выпадали равновероятно
+  let out = '';
+  while (out.length < 16) {
+    const bytes = fill(new Uint8Array(32));
+    for (const b of bytes) {
+      if (b < limit && out.length < 16) out += alphabet[b % alphabet.length];
+    }
+  }
+  return out;
+}
+
+function guardNeeded() {
+  if (guardUi.needed) return;
+  guardUi.needed = true;
+  $('login').hidden = false;
+  $('loginMsg').textContent = tokenGet() ? 'Сохранённый токен не подошёл (возможно, его сменили).' : '';
+  $('loginToken').value = '';
+  setTimeout(() => $('loginToken').focus(), 0);
+}
+
+// проверка доступа при загрузке: true - можно работать
+async function guardInit() {
+  try {
+    const s = await api.get('/api/auth');
+    if (s.on && !s.ok) {
+      guardNeeded();
+      if (s.locked) $('loginMsg').textContent = describeError('locked');
+      return false;
+    }
+  } catch (e) { /* связи нет: дальше покажет значок, опрос продолжится */ }
+  return true;
+}
+
+async function guardLogin() {
+  const t = $('loginToken').value.trim();
+  if (!tokenValid(t)) {
+    $('loginMsg').textContent = 'Токен: 8–32 символа (латиница, цифры, . _ ~ -).';
+    return;
+  }
+  tokenSet(t);
+  guardUi.needed = false;
+  try {
+    const s = await api.get('/api/auth');
+    if (s.locked) throw new Error(describeError('locked'));
+    if (s.on && !s.ok) throw new Error('Неверный токен.');
+  } catch (e) {
+    tokenClear();
+    guardUi.needed = true;
+    $('loginMsg').textContent = e.message;
+    return;
+  }
+  $('login').hidden = true;
+  $('loginToken').value = '';
+  startApp();
+  refresh(true);
+  const active = document.querySelector('#tabs button.active');
+  if (active) document.dispatchEvent(new CustomEvent('gt-tab', { detail: active.dataset.tab }));
+}
+
+const guardCard = { st: null };
+
+function guardRender() {
+  const s = guardCard.st;
+  if (!s) return;
+  const win = ota.st ? !!ota.st.open : !!s.win;   // окно обслуживания то же, что для обновления прошивки
+  $('gStatus').textContent = (s.on ? 'Защита включена: управление требует токен.' : 'Защита выключена: гирляндой может управлять любой в этой сети.') +
+    (win ? ' Окно изменения открыто.' : ' Окно изменения закрыто.');
+  $('gSave').disabled = !win;
+  $('gClear').disabled = !(win && s.on);
+  $('gUdp').checked = !!s.udpLock;
+  $('gHint').textContent = !s.on ? '' : s.udpLock
+    ? 'Приложение не сможет управлять гирляндой, пока в нём нет поддержки токена.'
+    : 'Управление из приложения (UDP) остаётся открытым для всех в сети: приложение не умеет вводить токен. Закрой его, если важнее защита.';
+}
+
+async function guardLoad() {
+  try {
+    guardCard.st = await api.get('/api/auth');
+    guardRender();
+  } catch (e) { /* связь пропала или нужен вход */ }
+}
+
+function initGuard() {
+  $('loginGo').addEventListener('click', guardLogin);
+  $('loginToken').addEventListener('keydown', (e) => { if (e.key === 'Enter') guardLogin(); });
+  $('gGen').addEventListener('click', () => { $('gToken').value = genToken(); });
+  $('gSave').addEventListener('click', async () => {
+    const t = $('gToken').value.trim();
+    if (!tokenValid(t)) {
+      toast('Токен: 8–32 символа (латиница, цифры, . _ ~ -)');
+      return;
+    }
+    try {
+      await api.post('/api/auth', { token: t });
+      tokenSet(t);   // эту страницу не разлогиниваем: она уже знает новый токен
+      $('gToken').value = '';
+      toast('Токен сохранён. Запомни его: он нужен на других устройствах', true);
+    } catch (e) {
+      toast(e.message);
+    }
+    guardLoad();
+  });
+  $('gClear').addEventListener('click', async () => {
+    if (!confirm('Убрать защиту? Гирляндой сможет управлять любой в этой сети.')) return;
+    try {
+      await api.post('/api/auth', { token: '' });
+      tokenClear();
+      toast('Защита выключена', true);
+    } catch (e) {
+      toast(e.message);
+    }
+    guardLoad();
+  });
+  $('gUdp').addEventListener('change', async () => {
+    try {
+      await api.post('/api/auth', { udpLock: $('gUdp').checked ? 1 : 0 });
+    } catch (e) {
+      toast(e.message);
+    }
+    guardLoad();
+  });
+  document.addEventListener('gt-tab', (e) => { if (e.detail === 'ota') guardLoad(); });
 }
 
 // ---------- вкладки ----------
@@ -1179,9 +1339,18 @@ function init() {
   initVcalib();
   initOta();
   initSched();
+  initGuard();
+  // сеть - только после проверки доступа: с чужим токеном несколько запросов подряд заблокировали бы это устройство
+  guardInit().then((ok) => { if (ok) startApp(); });
+}
+
+function startApp() {
+  if (guardUi.started) return;
+  guardUi.started = true;
+  schedStart();
   refresh();
   setInterval(refresh, 2000);
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };

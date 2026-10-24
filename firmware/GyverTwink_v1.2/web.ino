@@ -7,6 +7,7 @@
 
 #define WEB_HDR "X-Requested-With"
 #define WEB_HDR_VAL "GyverTwink"
+#define WEB_TOKEN "X-GT-Token"
 #define MDNS_NAME "gyvertwink"
 
 static void webJson(int code, const char* json) {
@@ -20,11 +21,28 @@ static void webError(int code, const char* what) {
   webJson(code, b);
 }
 
-// только запросы нашей страницы
-static bool webAllowed() {
-  if (webServer.header(WEB_HDR) == WEB_HDR_VAL) return true;
-  webError(403, "forbidden");
+// проверка токена (guard.ino): true - можно. Нет токена или он неверный - 401, адрес заблокирован за подбор - 429
+static bool webAuth() {
+  if (!guardOn()) return true;
+  String t = webServer.header(WEB_TOKEN);
+  byte r = guardVerify((uint32_t)webServer.client().remoteIP(), t.c_str());
+  if (r == 0) return true;
+  if (r == 2) {
+    webServer.sendHeader("Retry-After", "60");
+    webError(429, "locked");
+  } else {
+    webError(401, "auth");
+  }
   return false;
+}
+
+// только запросы нашей страницы (и с токеном, если он включён)
+static bool webAllowed() {
+  if (webServer.header(WEB_HDR) != WEB_HDR_VAL) {
+    webError(403, "forbidden");
+    return false;
+  }
+  return webAuth();
 }
 
 // аргумент-число: 1 - принят, 0 - его нет в запросе, -1 - не число или вне диапазона
@@ -86,6 +104,7 @@ static void webSendSchedule() {
 }
 
 static void handleScheduleGet() {
+  if (!webAuth()) return;
   webSendSchedule();
 }
 
@@ -151,6 +170,59 @@ static void handleTimePost() {
   webSendSchedule();
 }
 
+// ---------- защита токеном (guard.ino) ----------
+// on - защита включена; ok - токен из запроса подходит (или защиты нет); locked - адрес заблокирован за подбор;
+// win - окно обслуживания открыто (задать/сменить/снять токен можно только в нём); udpLock - команды записи по UDP закрыты
+static void webSendAuth(byte r) {
+  char b[110];
+  snprintf(b, sizeof(b), "{\"on\":%d,\"ok\":%d,\"locked\":%d,\"win\":%d,\"udpLock\":%d,\"min\":%d,\"max\":%d}", guardOn() ? 1 : 0, r == 0 ? 1 : 0,
+           r == 2 ? 1 : 0, otaOpen() ? 1 : 0, guard.udpOpen ? 0 : 1, TOKEN_MIN, TOKEN_MAX);
+  webJson(200, b);
+}
+
+// GET /api/auth открыт: страница по нему узнаёт, нужен ли вход
+static void handleAuthGet() {
+  webSendAuth(guardVerify((uint32_t)webServer.client().remoteIP(), webServer.header(WEB_TOKEN).c_str()));
+}
+
+// POST /api/auth: token - новый токен (пустой - снять защиту; только при открытом окне обслуживания, оно после этого закрывается);
+// udpLock - 1 закрыть команды записи по UDP, 0 открыть (нужен токен, если защита включена). Всё или ничего.
+// В ответе ok = 1: запрос выполнен (токен нового запроса страница проверит сама через GET /api/auth).
+static void handleAuthPost() {
+  if (webServer.header(WEB_HDR) != WEB_HDR_VAL) {
+    webError(403, "forbidden");
+    return;
+  }
+  bool hasTok = webServer.hasArg("token"), hasUdp = webServer.hasArg("udpLock");
+  if (!hasTok && !hasUdp) {
+    webError(400, "token");
+    return;
+  }
+  String t = webServer.arg("token");
+  if (hasTok && t.length() > 0 && !guardTokenValid(t.c_str())) {
+    webError(400, "token");
+    return;
+  }
+  long udp = 0;
+  if (hasUdp && webArgInt("udpLock", 0, 1, udp) <= 0) {
+    webError(400, "udpLock");
+    return;
+  }
+  if (hasTok) {
+    if (!otaOpen()) {   // менять токен можно только рядом с гирляндой
+      webError(403, "window");
+      return;
+    }
+  } else if (!webAuth()) {
+    return;
+  }
+  if (hasTok) guardSet(t.c_str());
+  if (hasUdp) guard.udpOpen = !udp;
+  EEguard.update();
+  if (hasTok) otaCloseWindow();
+  webSendAuth(0);
+}
+
 static void handleRoot() {
   webServer.sendHeader("Content-Encoding", "gzip");
   webServer.sendHeader("Cache-Control", "no-cache");
@@ -158,6 +230,7 @@ static void handleRoot() {
 }
 
 static void handleState() {
+  if (!webAuth()) return;
   webSendState();
 }
 
@@ -214,6 +287,7 @@ static bool webEffectArg(long& n) {
 }
 
 static void handleEffectGet() {
+  if (!webAuth()) return;
   long n;
   if (webEffectArg(n)) webSendEffect(n);
 }
@@ -263,6 +337,7 @@ static bool webSlotArg(long& slot) {
 }
 
 static void handleScenesGet() {
+  if (!webAuth()) return;
   webSendScenes();
 }
 
@@ -322,6 +397,7 @@ static int hexVal(char c) {
 
 // GET /api/xy: {"n":число,"w":..,"h":..,"xy":"hex"} - по 4 символа на светодиод: x, y
 static void handleXyGet() {
+  if (!webAuth()) return;
   String body;
   body.reserve(60 + 4 * cfg.ledAm);
   char head[64];
@@ -405,6 +481,7 @@ static void webSendVcalib() {
 }
 
 static void handleVcalibGet() {
+  if (!webAuth()) return;
   webSendVcalib();
 }
 
@@ -436,6 +513,7 @@ static void handleVcalibStop() {
 
 // ---------- обновление прошивки (ota.ino) ----------
 static void handleOtaGet() {
+  if (!webAuth()) return;
   char b[100];
   snprintf(b, sizeof(b), "{\"open\":%d,\"left\":%u,\"free\":%u,\"busy\":%d}", otaOpen() ? 1 : 0, (unsigned)otaLeftSec(),
            (unsigned)ESP.getFreeSketchSpace(), otaBusy ? 1 : 0);
@@ -495,9 +573,9 @@ static void handleOtaDone() {
 
 void webBegin() {
   scenesBegin();
-  static const char* hdrs[] = {WEB_HDR};
+  static const char* hdrs[] = {WEB_HDR, WEB_TOKEN};
   // (size_t): на ядре 3.x без приведения выбирается шаблон collectHeaders(const Args&...) и сборка падает
-  webServer.collectHeaders(hdrs, (size_t)1);
+  webServer.collectHeaders(hdrs, (size_t)2);
   webServer.on("/", HTTP_GET, handleRoot);
   webServer.on("/api/state", HTTP_GET, handleState);
   webServer.on("/api/set", HTTP_POST, handleSet);
@@ -507,6 +585,8 @@ void webBegin() {
   webServer.on("/api/schedule", HTTP_GET, handleScheduleGet);
   webServer.on("/api/schedule", HTTP_POST, handleSchedulePost);
   webServer.on("/api/time", HTTP_POST, handleTimePost);
+  webServer.on("/api/auth", HTTP_GET, handleAuthGet);
+  webServer.on("/api/auth", HTTP_POST, handleAuthPost);
   webServer.on("/api/ota", HTTP_GET, handleOtaGet);
   webServer.on("/update", HTTP_POST, handleOtaDone, handleOtaUpload);
   webServer.on("/api/vcalib", HTTP_GET, handleVcalibGet);

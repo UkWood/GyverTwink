@@ -9,6 +9,15 @@
 </style>
 </head>
 <body>
+<div id="login" hidden role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <div class="card">
+    <h2 id="loginTitle">Нужен токен доступа</h2>
+    <p>Управление этой гирляндой защищено токеном. Введи его (его задают на вкладке «Прошивка»).</p>
+    <input id="loginToken" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="32" aria-label="Токен">
+    <div class="row"><button id="loginGo" class="btn">Войти</button></div>
+    <p class="hint" id="loginMsg"></p>
+  </div>
+</div>
 <header>
   <h1>GyverTwink</h1>
   <span id="conn">нет связи</span>
@@ -154,6 +163,16 @@
       <div class="row"><button id="otaGo" class="btn" disabled>Загрузить и обновить</button></div>
       <div class="bar"><div id="otaBar"></div></div>
       <p class="hint" id="otaResult"></p>
+    </div>
+    <div class="card" id="guardCard">
+      <h2>Защита доступа</h2>
+      <p id="gStatus">…</p>
+      <p class="hint">Чтобы задать, сменить или снять токен, нажми кнопку на гирлянде <b>три раза подряд</b> (окно на 5 минут, как для обновления прошивки). Забыл токен — сделай то же самое и задай новый.</p>
+      <div class="row"><input id="gToken" type="text" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="токен: 8–32 символа" aria-label="Новый токен"></div>
+      <div class="row btnrow"><button id="gGen" class="btn secondary">Сгенерировать</button><button id="gSave" class="btn" disabled>Сохранить</button><button id="gClear" class="btn secondary" disabled>Убрать защиту</button></div>
+      <div class="row"><label for="gUdp">Закрыть управление из приложения (UDP)</label><input id="gUdp" type="checkbox"></div>
+      <p class="hint" id="gHint"></p>
+      <p class="hint">В токене можно использовать латинские буквы, цифры и знаки . _ ~ - Он передаётся по обычному HTTP без шифрования: это защита от случайных гостей сети, а не от того, кто прослушивает трафик. Лучше сгенерировать токен кнопкой.</p>
     </div>
   </section>
 

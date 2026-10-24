@@ -17,6 +17,11 @@ static void resetAll() {
   fakeNtpOn() = false;
   schedNtp = false;
   schedLastMin = 0;
+  guard = Guard();   // защита токеном выключена, таблица неверных попыток пуста
+  memset(guardCnt, 0, sizeof(guardCnt));
+  memset(guardLocked, 0, sizeof(guardLocked));
+  memset(guardIp, 0, sizeof(guardIp));
+  fakeClientIp() = 0x0A00000A;
   memset(xy, 0, sizeof(xy));
   for (auto& l : leds) l = CRGB();
   stripObj = CLEDController();
@@ -44,6 +49,7 @@ static void resetAll() {
   EEeff = EEManager(effs);
   EEfx = EEManager(effsX);
   EEsched = EEManager(sched);
+  EEguard = EEManager(guard);
   EExy = EEManager(xy);
   EEmm = EEManager(mm);
   EEpwr = EEManager(pwr);
@@ -592,5 +598,6 @@ TEST(new_effect_cross_fade_from_old_effect) {
 #include "test_coords_cases.h"
 #include "test_vcalib_cases.h"
 #include "test_ota_cases.h"
+#include "test_guard_cases.h"
 
 int main() { return runAllTests(); }
