@@ -164,7 +164,7 @@ try {
   console.log('вкладка «Эффекты»');
   await page.click('[data-tab=effects]');
   check(await page.isVisible('#effList'), 'вкладка открылась');
-  check((await page.$$('#effList button')).length === 28, '28 эффектов в списке (22 палитры и 6 новых)');
+  check((await page.$$('#effList button')).length === 29, '29 эффектов в списке (22 палитры, 6 новых и Огонь v2)');
   check(await page.isHidden('#effEditor'), 'редактор скрыт, пока эффект не выбран');
   await page.click('#eff-7');
   check(await stateIs('curEff', 7), 'выбор эффекта делает его текущим');
@@ -201,6 +201,29 @@ try {
   await page.click('#eff-24');
   check(await until(async () => (await page.$eval('#effScale', (e) => e.value)) === '120'), 'настройки нового эффекта сохранились');
   check(await until(async () => (await page.textContent('#effHint')).includes('Масштаб')), 'подсказка вернулась');
+
+  console.log('Огонь v2');
+  check(await page.isHidden('#fire2Box'), 'у обычных эффектов настроек формы нет');
+  await page.click('#eff-28');
+  check(await stateIs('curEff', 28), 'Огонь v2 становится текущим');
+  check(await until(async () => await page.isVisible('#fire2Box')), 'появились настройки формы');
+  check(await until(async () => (await page.$eval('#effShape', (e) => e.value)) === '120' && (await page.$eval('#effSparks', (e) => e.value)) === '80'), 'значения по умолчанию: колпак 120, искры 80');
+  await setRange('#effShape', 200);
+  await setRange('#effSparks', 10);
+  await setRange('#effFlicker', 250);
+  await page.check('#effWhite');
+  const fxGet = () => page.evaluate(async () => (await fetch('/api/effect?n=28')).json());
+  check(await until(async () => {
+    const fx = await fxGet();
+    return fx.shape === 200 && fx.sparks === 10 && fx.flicker === 250 && fx.white === 1;
+  }), 'настройки формы дошли до гирлянды');
+  await page.click('#eff-24');
+  check(await until(() => page.isHidden('#fire2Box')), 'у другого эффекта настройки формы скрыты');
+  await page.click('#eff-28');
+  check(await until(async () => (await page.$eval('#effShape', (e) => e.value)) === '200' && (await page.$eval('#effWhite', (e) => e.checked)) === true), 'настройки формы запомнились');
+  await page.uncheck('#effWhite');
+  check(await until(async () => (await fxGet()).white === 0), 'белый огонь можно выключить');
+  await page.click('#eff-24');
 
 
   console.log('вкладка «Сцены»');

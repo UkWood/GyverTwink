@@ -33,9 +33,10 @@ MM mm;
 Pwr pwr;
 Effects effs[ACTIVE_PALETTES * 2];
 Effects effsX[EXT_EFFECTS];
+Fire2 fire2;
 Sched sched;
 Guard guard;
-EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched), EEguard(guard);
+EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched), EEguard(guard), EEfire2(fire2);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
 // порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
 EncButtonStub btn;

@@ -98,6 +98,10 @@ EEManager EEsched(sched);
 Guard guard;
 EEManager EEguard(guard);
 
+// настройки «Огня v2» (effects.ino): самый последний блок
+Fire2 fire2;
+EEManager EEfire2(fire2);
+
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
@@ -147,6 +151,8 @@ void setup() {
   EEfx.begin(EEpwr.nextAddr(), 'a');
   EEsched.begin(EEfx.nextAddr(), 'a');
   EEguard.begin(EEsched.nextAddr(), 'a');
+  fire2Defaults(fire2);   // значения по умолчанию, если блока ещё нет
+  EEfire2.begin(EEguard.nextAddr(), 'a');
   guard.token[TOKEN_MAX] = '\0';   // защита от мусора в EEPROM
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
@@ -172,6 +178,7 @@ void loop() {
   EEfx.tick();
   EEsched.tick();
   EEguard.tick();
+  EEfire2.tick();
 
   parsing();  // парсим udp
   webTick();  // веб-интерфейс

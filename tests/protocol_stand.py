@@ -244,7 +244,7 @@ def scenario_lossy(srv, seed, loss):
         c.send([2, 2, v])
     c.pump(20, lambda: not c.queue)
     done = srv.get("curEff")
-    delta = (done - start) % 22
+    delta = (done - start) % srv.get("count")   # по кругу всех эффектов (число берётся из прошивки)
     msg = "seed %d, loss %d%%: next-effect executed %d of 6, dropped by client %d" % (seed, int(loss * 100), delta, c.dropped)
     check(delta <= 6, msg + " (never more than sent)")
     if c.dropped == 0:

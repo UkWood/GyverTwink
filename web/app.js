@@ -9,6 +9,7 @@ const EFFECT_NAMES = [
   'Cold_noise', 'Hot_noise', 'Pink_noise', 'Cyber_noise', 'RedWhite_noise',
   // новые эффекты (номера с ACTIVE_PALETTES * 2 в прошивке; страница вшита в прошивку, поэтому списки всегда совпадают)
   'Звёзды', 'Бегущие огни', 'Огонь', 'Дыхание', 'Волны по высоте', 'Волны от центра',
+  'Огонь v2',
 ];
 
 // что значат масштаб и скорость у новых эффектов (у первых 22 - масштаб узора и скорость течения)
@@ -19,6 +20,7 @@ const EFFECT_HINTS = {
   25: 'Масштаб — разница фаз по карте (0 — все дышат одновременно), скорость — частота дыхания.',
   26: 'Масштаб — сколько волн по высоте, скорость — как быстро они идут (ниже 128 — в обратную сторону).',
   27: 'Масштаб — сколько колец от центра карты, скорость — как быстро они расходятся (ниже 128 — к центру).',
+  28: 'Огонь с четырьмя настройками формы. Масштаб и скорость — как у «Огня». Колпак — насколько пламя гаснет к краям и вверху, искры — вылетающие угольки над пламенем, трепет — мелкая быстрая дрожь, белый огонь — без красно-жёлтого цвета. Настройки формы хранятся на гирлянде отдельно и в сцены не входят.',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -27,7 +29,7 @@ const $ = (id) => document.getElementById(id);
 const FIELD_NAMES = {
   ledAm: 'количество светодиодов', power: 'питание', bright: 'яркость', auto: 'автосмена', rnd: 'случайный порядок',
   period: 'период смены', offOn: 'таймер выключения', offMin: 'минуты до выключения', maxMa: 'лимит тока',
-  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта',
+  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта', shape: 'колпак', sparks: 'искры', flicker: 'трепет', white: 'белый огонь',
   tz: 'часовой пояс', lat: 'широта', lon: 'долгота', days: 'дни недели', onT: 'тип включения', offT: 'тип выключения',
   onV: 'время или смещение включения', offV: 'время или смещение выключения', unix: 'время',
   token: 'токен (8–32 символа: латиница, цифры, . _ ~ -)', udpLock: 'блокировка управления по UDP',
@@ -246,7 +248,19 @@ function fillEffect(e) {
   $('effScale-val').textContent = e.scale;
   $('effSpeed').value = e.speed;
   $('effSpeed-val').textContent = e.speed;
+  const fire2 = e.shape !== undefined;   // у «Огня v2» есть ещё четыре настройки формы
+  $('fire2Box').hidden = !fire2;
+  if (fire2) {
+    for (const [id, key] of FIRE2_SLIDERS) {
+      if (busy.has(id)) continue;
+      $(id).value = e[key];
+      $(id + '-val').textContent = e[key];
+    }
+    $('effWhite').checked = !!e.white;
+  }
 }
+
+const FIRE2_SLIDERS = [['effShape', 'shape'], ['effSparks', 'sparks'], ['effFlicker', 'flicker']];
 
 async function selectEffect(n) {
   selEff = n;
@@ -264,7 +278,7 @@ async function editEffect(params) {
   if (selEff < 0) return;
   try {
     const e = await api.post('/api/effect', Object.assign({ n: selEff, show: 1 }, params));
-    if (!busy.has('effScale') && !busy.has('effSpeed')) fillEffect(e);
+    if (!['effScale', 'effSpeed', 'effShape', 'effSparks', 'effFlicker'].some((id) => busy.has(id))) fillEffect(e);
   } catch (e) {
     toast(e.message);
   }
@@ -292,6 +306,16 @@ function initEffects() {
       send(el.value);
     });
   }
+  for (const [id, key] of FIRE2_SLIDERS) {
+    const el = $(id);
+    trackBusy(el);
+    const send = debounced((v) => editEffect({ [key]: v }), 70);
+    el.addEventListener('input', () => {
+      $(id + '-val').textContent = el.value;
+      send(el.value);
+    });
+  }
+  $('effWhite').addEventListener('change', () => editEffect({ white: $('effWhite').checked ? 1 : 0 }));
 }
 
 // ---------- вкладка «Сцены» ----------

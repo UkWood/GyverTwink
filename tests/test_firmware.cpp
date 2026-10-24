@@ -12,6 +12,7 @@ static void resetAll() {
   pwr = Pwr();
   for (auto& e : effs) e = Effects();
   fxDefaults(effsX);
+  fire2Defaults(fire2);
   sched = Sched();   // расписание и часы
   fakeEpoch() = 0;
   fakeNtpOn() = false;
@@ -379,6 +380,7 @@ TEST(switch_without_favorites_does_not_hang) {
   resetAll();
   for (auto& e : effs) e.fav = false;
   for (auto& e : effsX) e.fav = false;
+  fire2.e.fav = false;
   curEff = 4;
   switchEff();
   CHECK_EQ(curEff, 4);
@@ -391,6 +393,7 @@ TEST(switch_sequential_skips_non_favorites_and_wraps) {
   resetAll();
   for (auto& e : effs) e.fav = false;
   for (auto& e : effsX) e.fav = false;
+  fire2.e.fav = false;
   effs[3].fav = effs[7].fav = true;
   curEff = 0;
   switchEff();
@@ -405,6 +408,7 @@ TEST(switch_random_picks_only_favorites) {
   resetAll();
   for (auto& e : effs) e.fav = false;
   for (auto& e : effsX) e.fav = false;
+  fire2.e.fav = false;
   effs[4].fav = effs[15].fav = true;
   cfg.rndCh = 1;
   bool saw4 = false, saw15 = false;
@@ -421,6 +425,7 @@ TEST(switch_includes_new_effects_only_when_favorite) {
   resetAll();
   for (auto& e : effs) e.fav = false;
   for (auto& e : effsX) e.fav = false;   // (по умолчанию новые эффекты избранные, здесь проверяем флажок)
+  fire2.e.fav = false;
   effs[3].fav = true;
   for (int i = 0; i < 40; i++) {
     switchEff();
@@ -563,6 +568,104 @@ TEST(fire_is_hotter_at_the_bottom_than_at_the_top) {
   for (int f = 0; f < 40; f++) runEffect(NEW0 + 2);
   int top = sumRgb(0, 60), bottom = sumRgb(240, 300);
   CHECK(bottom > top * 2);
+}
+
+// ---- «Огонь v2»: номер FIRE2_EFF, четыре параметра в fire2 ----
+static int countLeds(int a, int b, CRGB c) {
+  int n = 0;
+  for (int i = a; i < b; i++) n += leds[i] == c;
+  return n;
+}
+
+TEST(fire2_is_hotter_at_the_bottom_than_at_the_top) {
+  resetAll();
+  lineUp(300);
+  fire2.sparks = 0;
+  for (int f = 0; f < 40; f++) runEffect(FIRE2_EFF);
+  CHECK(sumRgb(240, 300) > sumRgb(0, 60) * 2);
+}
+
+TEST(fire2_white_flag_makes_the_fire_colourless) {
+  resetAll();
+  lineUp(300);
+  fire2.white = 1;
+  for (int f = 0; f < 30; f++) runEffect(FIRE2_EFF);
+  bool grey = true;
+  for (int i = 0; i < 300; i++) grey = grey && leds[i].r == leds[i].g && leds[i].g == leds[i].b;
+  CHECK(grey);
+  CHECK(sumRgb(0, 300) > 0);
+  fire2.white = 0;
+  for (int f = 0; f < 30; f++) runEffect(FIRE2_EFF);
+  bool coloured = false;
+  for (int i = 0; i < 300; i++) coloured = coloured || leds[i].r != leds[i].g;
+  CHECK(coloured);
+}
+
+TEST(fire2_sparks_appear_only_above_the_base_and_only_when_enabled) {
+  resetAll();
+  lineUp(300);
+  fire2.flicker = 0;
+  fire2.shape = 0;
+  const CRGB spark(255, 170, 40);   // цвет искры; обычный цвет огня с такой синей составляющей невозможен (кратна трём)
+  fire2.sparks = 0;
+  int none = 0;
+  for (int f = 0; f < 200; f++) { runEffect(FIRE2_EFF); none += countLeds(0, 300, spark); }
+  CHECK_EQ(none, 0);
+  fire2.sparks = 255;
+  int some = 0, low = 0;
+  for (int f = 0; f < 200; f++) {
+    runEffect(FIRE2_EFF);
+    some += countLeds(0, 300, spark);
+    low += countLeds(270, 300, spark);   // нижние светодиоды (Y больше): у основания искр нет
+  }
+  CHECK(some > 20);
+  CHECK_EQ(low, 0);
+}
+
+TEST(fire2_shape_darkens_the_edges_and_flicker_changes_the_picture) {
+  resetAll();
+  cfg.ledAm = 41;
+  for (int i = 0; i < 41; i++) { xy[i][0] = i * 6 + 5; xy[i][1] = 128; }
+  recalcBounds();
+  fire2.sparks = 0;
+  fire2.flicker = 0;
+  fire2.shape = 0;
+  for (int f = 0; f < 5; f++) runEffect(FIRE2_EFF);
+  int edgeFlat = sumRgb(0, 6) + sumRgb(35, 41), mid = sumRgb(17, 24);
+  fire2.shape = 255;
+  for (int f = 0; f < 5; f++) runEffect(FIRE2_EFF);
+  int edgeShaped = sumRgb(0, 6) + sumRgb(35, 41);
+  CHECK(edgeShaped < edgeFlat);
+  CHECK(sumRgb(17, 24) >= mid - mid / 4);   // центр почти не пострадал
+  fire2.shape = 0;
+  // трепет добавляет мелкую неровность: разница соседних светодиодов за 30 кадров заметно больше, чем без него
+  auto roughness = [&]() {
+    int r = 0;
+    for (int f = 0; f < 30; f++) {
+      runEffect(FIRE2_EFF);
+      for (int i = 0; i + 1 < 41; i++) r += abs((int)leds[i].r + leds[i].g + leds[i].b - (int)leds[i + 1].r - leds[i + 1].g - leds[i + 1].b);
+    }
+    return r;
+  };
+  fire2.flicker = 0;
+  int calm = roughness();
+  fire2.flicker = 255;
+  int rough = roughness();
+  CHECK(rough > calm);
+}
+
+TEST(fire2_survives_extreme_settings_and_zero_size_map) {
+  resetAll();
+  cfg.ledAm = LED_MAX;
+  for (int i = 0; i < LED_MAX; i++) xy[i][0] = xy[i][1] = 77;
+  recalcBounds();
+  const int v[] = {0, 1, 255};
+  for (int sh : v) for (int sp : v) for (int fl : v) for (int w = 0; w < 2; w++) {
+    fire2.shape = sh; fire2.sparks = sp; fire2.flicker = fl; fire2.white = w;
+    fire2.e.scale = sh; fire2.e.speed = fl;
+    for (int f = 0; f < 3; f++) runEffect(FIRE2_EFF);
+  }
+  CHECK(true);   // главное - без деления на ноль и выхода за массивы (ASan/UBSan)
 }
 
 // Шум Перлина устроен ячейками по 256 единиц. Если соседние ряды отстоят друг от друга почти на целую ячейку (схема «спираль»

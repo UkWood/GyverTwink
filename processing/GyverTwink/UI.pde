@@ -46,6 +46,7 @@ String[] effs = {
   "25. Breath", 
   "26. Wave_height", 
   "27. Wave_radial", 
+  "28. Fire_v2", 
 };
 
 void ui() {

@@ -15,6 +15,7 @@ void settingsChanged() {
 // настройки эффекта n изменены: запись нужного блока EEPROM (у новых эффектов он свой, см. effsX)
 void effSave(byte n) {
   if (n < ACTIVE_PALETTES * 2) EEeff.update();
+  else if (n >= FIRE2_EFF) EEfire2.update();
   else EEfx.update();
 }
 

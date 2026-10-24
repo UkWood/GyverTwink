@@ -229,15 +229,48 @@ TEST(web_new_effects_use_their_own_settings_block) {
 
   Effects before[ACTIVE_PALETTES * 2];
   memcpy(before, effs, sizeof(effs));
-  r = webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT - 1)}, {"fav", "1"}, {"scale", "123"}, {"speed", "45"}, {"show", "1"}});
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF - 1)}, {"fav", "1"}, {"scale", "123"}, {"speed", "45"}, {"show", "1"}});
   CHECK_EQ(r.code, 200);
   CHECK(effsX[EXT_EFFECTS - 1].fav);
   CHECK_EQ(effsX[EXT_EFFECTS - 1].scale, 123);
   CHECK_EQ(effsX[EXT_EFFECTS - 1].speed, 45);
-  CHECK_EQ(curEff, EFFECT_COUNT - 1);
+  CHECK_EQ(curEff, FIRE2_EFF - 1);
   CHECK(EEfx.updates > 0);
   CHECK_EQ(EEeff.updates, 0);                        // блок старых эффектов не записывался
   CHECK(memcmp(before, effs, sizeof(effs)) == 0);
+  CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
+}
+
+TEST(web_fire2_has_four_extra_parameters_in_its_own_block) {
+  resetAll();
+  Resp r = webGet("/api/effect", {{"n", std::to_string(FIRE2_EFF)}});
+  CHECK_EQ(r.code, 200);
+  CHECK_EQ(jnum(r, "shape"), 120);
+  CHECK_EQ(jnum(r, "sparks"), 80);
+  CHECK_EQ(jnum(r, "flicker"), 100);
+  CHECK_EQ(jnum(r, "white"), 0);
+  CHECK_EQ(jnum(r, "fav"), 1);
+  CHECK_EQ(jnum(webGet("/api/effect", {{"n", "2"}}), "shape"), -999999);   // у обычного эффекта этих полей нет
+  Effects before[ACTIVE_PALETTES * 2];
+  memcpy(before, effs, sizeof(effs));
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"shape", "7"}, {"sparks", "255"}, {"flicker", "0"}, {"white", "1"}, {"scale", "33"}});
+  CHECK_EQ(r.code, 200);
+  CHECK(fire2.shape == 7 && fire2.sparks == 255 && fire2.flicker == 0 && fire2.white == 1);
+  CHECK_EQ(fire2.e.scale, 33);
+  CHECK_EQ(jnum(r, "white"), 1);
+  CHECK(EEfire2.updates > 0);
+  CHECK_EQ(EEfx.updates, 0);   // блок остальных новых эффектов не записывался
+  CHECK_EQ(EEeff.updates, 0);
+  CHECK(memcmp(before, effs, sizeof(effs)) == 0);
+  // ошибки: всё или ничего
+  const Args bad[] = {{{"shape", "256"}}, {{"sparks", "-1"}}, {{"flicker", "x"}}, {{"white", "2"}}};
+  for (Args a : bad) {
+    a["n"] = std::to_string(FIRE2_EFF);
+    a["scale"] = "99";
+    CHECK_EQ(webPost("/api/effect", a).code, 400);
+  }
+  CHECK_EQ(fire2.e.scale, 33);   // при ошибке ничего не применилось
+  CHECK_EQ(webPost("/api/effect", {{"n", "2"}, {"shape", "5"}}).code, 400);   // чужому эффекту параметры огня не принадлежат
   CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
 }
 
