@@ -15,13 +15,14 @@ void portalRoutine() {
 
 void startStrip() {
   strip = &FastLED.addLeds<LED_TYPE, LED_PIN, LED_ORDER>(leds, LED_MAX).setCorrection(TypicalLEDStrip);
+  colorOrderApply();   // порядок по умолчанию; настоящий читается из EEPROM позже
   strip->setLeds(leds, LED_MAX);
   strip->clearLedData();
   // выводим ргб
   leds[0] = CRGB::Red;
   leds[1] = CRGB::Green;
   leds[2] = CRGB::Blue;
-  strip->showLeds(50);
+  ledsShow(50);
 }
 
 bool checkButton() {

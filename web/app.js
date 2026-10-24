@@ -29,7 +29,7 @@ const $ = (id) => document.getElementById(id);
 const FIELD_NAMES = {
   ledAm: 'количество светодиодов', power: 'питание', bright: 'яркость', auto: 'автосмена', rnd: 'случайный порядок',
   period: 'период смены', offOn: 'таймер выключения', offMin: 'минуты до выключения', maxMa: 'лимит тока',
-  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта', shape: 'колпак', sparks: 'искры', flicker: 'трепет', lv: 'уровень цвета', r: 'красный', g: 'зелёный', b: 'синий',
+  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта', shape: 'колпак', sparks: 'искры', flicker: 'трепет', lv: 'уровень цвета', reset: 'сброс цветов', order: 'порядок цветов', r: 'красный', g: 'зелёный', b: 'синий',
   tz: 'часовой пояс', lat: 'широта', lon: 'долгота', days: 'дни недели', onT: 'тип включения', offT: 'тип выключения',
   onV: 'время или смещение включения', offV: 'время или смещение выключения', unix: 'время',
   token: 'токен (8–32 символа: латиница, цифры, . _ ~ -)', udpLock: 'блокировка управления по UDP',
@@ -172,6 +172,7 @@ function render(force) {
   $('ledAm').max = st.ledMax;
   setVal('ledAm', st.ledAm, force);
   setVal('maxMa', st.maxMa, force);
+  setVal('colorOrder', st.order, force);
   $('cur').textContent = st.cur + '. ' + EFFECT_NAMES[st.cur];
   $('foot').textContent = 'Прошивка ' + st.fw + ' · свободно ' + Math.round(st.heap / 1024) + ' КБ';
   markCurrentEffect();
@@ -220,6 +221,7 @@ function initControl() {
   for (const [id, key] of [['auto', 'auto'], ['rnd', 'rnd'], ['offOn', 'offOn']]) {
     $(id).addEventListener('change', () => setParams({ [key]: $(id).checked ? 1 : 0 }));
   }
+  $('colorOrder').addEventListener('change', () => setParams({ order: $('colorOrder').value }));
   for (const [id, key] of [['offMin', 'offMin'], ['ledAm', 'ledAm'], ['maxMa', 'maxMa']]) {
     const el = $(id);
     trackBusy(el);
@@ -343,6 +345,10 @@ function initEffects() {
       send(el.value);
     });
   }
+  $('fire2Reset').addEventListener('click', async () => {
+    if (!window.confirm('Вернуть цвета пламени к значениям по умолчанию (как на фото костра)?')) return;
+    await editEffect({ reset: 1 });
+  });
   // цвета уровней: выбираешь уровень - три ползунка RGB; движение сразу уходит на гирлянду (она показывает этот эффект)
   const lvBox = $('fire2Levels');
   for (let l = 0; l < FIRE2_LEVELS; l++) {

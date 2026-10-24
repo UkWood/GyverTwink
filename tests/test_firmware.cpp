@@ -13,6 +13,7 @@ static void resetAll() {
   for (auto& e : effs) e = Effects();
   fxDefaults(effsX);
   fire2Defaults(fire2);
+  colorOrder = ColorOrder();
   sched = Sched();   // расписание и часы
   fakeEpoch() = 0;
   fakeNtpOn() = false;
@@ -443,6 +444,63 @@ TEST(switch_includes_new_effects_only_when_favorite) {
     switchEff();
     CHECK_EQ(curEff, ACTIVE_PALETTES * 2 + 1);   // случайный порядок тоже находит избранный новый
   }
+}
+
+// ================= порядок цветов ленты =================
+TEST(color_order_permutes_bytes_for_the_strip_and_restores_the_frame) {
+  resetAll();
+  stripObj.setLeds(leds, LED_MAX);
+  // по умолчанию GRB (как было до настройки): лента получает G, R, B
+  CHECK_EQ(colorOrder.order, ORDER_GRB);
+  leds[0] = CRGB(10, 20, 30);
+  ledsShow(100);
+  CHECK(stripObj.sent[0] == CRGB(20, 10, 30));
+  CHECK(leds[0] == CRGB(10, 20, 30));   // кадр в ОЗУ вернулся: эффекты продолжают работать с обычными R, G, B
+  CHECK_EQ(stripObj.shown.back(), 100);
+  // все шесть порядков: уходит ровно то, что обещает таблица, и всегда возвращается исходное
+  for (int o = 0; o < ORDER_COUNT; o++) {
+    colorOrder.order = o;
+    for (int i = 0; i < LED_MAX; i++) leds[i] = CRGB(i * 3 + 1, i * 5 + 2, i * 7 + 3);
+    std::vector<CRGB> before(leds, leds + LED_MAX);
+    ledsShow(255);
+    byte v[3] = {before[0].r, before[0].g, before[0].b};
+    CHECK(stripObj.sent[0] == CRGB(v[ORDER_PERM[o][0]], v[ORDER_PERM[o][1]], v[ORDER_PERM[o][2]]));
+    bool same = true;
+    for (int i = 0; i < LED_MAX; i++) same = same && leds[i] == before[i];
+    CHECK(same);
+  }
+  // BRG (лента владельца): красный остаётся красным, зелёное и синее меняются местами
+  colorOrder.order = 4;
+  leds[0] = CRGB(255, 0, 0);
+  leds[1] = CRGB(0, 255, 0);
+  leds[2] = CRGB(0, 0, 255);
+  ledsShow(255);
+  CHECK(stripObj.sent[0] == CRGB(0, 255, 0));   // R уходит вторым байтом
+  CHECK(stripObj.sent[1] == CRGB(0, 0, 255));   // G - третьим
+  CHECK(stripObj.sent[2] == CRGB(255, 0, 0));   // B - первым
+  // RGB - ничего не переставляется
+  colorOrder.order = 0;
+  leds[0] = CRGB(1, 2, 3);
+  ledsShow(255);
+  CHECK(stripObj.sent[0] == CRGB(1, 2, 3));
+  // мусор в EEPROM - порядок по умолчанию
+  colorOrder.order = 200;
+  leds[0] = CRGB(10, 20, 30);
+  ledsShow(255);
+  CHECK(stripObj.sent[0] == CRGB(20, 10, 30));
+}
+
+TEST(color_order_correction_follows_the_channels) {
+  resetAll();
+  // поправка TypicalLEDStrip (R 255, G 176, B 240) должна идти за своим каналом, а не за позицией байта
+  colorOrderApply();
+  CHECK(stripObj.correction == CRGB(176, 255, 240));   // GRB: первый байт - G
+  setColorOrder(4);                                    // BRG
+  CHECK_EQ(colorOrder.order, 4);
+  CHECK(stripObj.correction == CRGB(240, 255, 176));
+  CHECK(EEcolor.updates > 0);                          // порядок записывается в EEPROM
+  setColorOrder(0);
+  CHECK(stripObj.correction == CRGB(255, 176, 240));
 }
 
 // ================= ограничение тока =================

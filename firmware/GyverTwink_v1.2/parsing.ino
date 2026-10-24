@@ -143,7 +143,7 @@ void handlePacket() {
           DEBUGLN("Calibration start");
           calibF = true;
           strip->clearLedData();
-          strip->showLeds(0);
+          ledsShow(0);
           break;
 
         case 1:   // следующий лед
@@ -159,7 +159,7 @@ void handlePacket() {
             }
             strip->clearLedData();
             if (curLed < LED_MAX) leds[curLed] = CRGB::White;   // curLed == LED_MAX - только сохранить координаты последнего
-            strip->showLeds(200);
+            ledsShow(200);
           }
           break;
 
@@ -167,7 +167,7 @@ void handlePacket() {
           DEBUGLN("Finished");
           calibF = false;
           strip->clearLedData();
-          strip->showLeds(0);
+          ledsShow(0);
           recalcBounds();
           coordsSave();
           break;

@@ -54,6 +54,12 @@
       <div class="row"><label for="ledAm">Количество светодиодов</label><input id="ledAm" type="number" min="1" inputmode="numeric"></div>
       <div class="row"><label for="maxMa">Лимит тока, мА</label><input id="maxMa" type="number" min="0" max="25500" step="100" inputmode="numeric"></div>
       <p class="hint">Лимит 0 — без ограничения. Ставь около 80% от тока блока питания.</p>
+      <div class="row"><label for="colorOrder">Порядок цветов ленты</label>
+        <select id="colorOrder">
+          <option value="0">RGB</option><option value="1">RBG</option><option value="2">GRB</option>
+          <option value="3">GBR</option><option value="4">BRG</option><option value="5">BGR</option>
+        </select></div>
+      <p class="hint">Если цвета перепутаны (например, красный верный, а зелёный и синий поменялись местами), выбери другой порядок. Проверка: на вкладке «Эффекты» включи «Огонь v2», выбери уровень 6 и по очереди двигай ползунки красного, зелёного и синего: каждый должен давать свой цвет. У многих 12-вольтовых лент порядок BRG. Настройка относится к ленте и в сцены не входит.</p>
     </div>
   </section>
 
@@ -79,6 +85,7 @@
         <div class="row"><label for="effR">Красный</label><input id="effR" type="range" min="0" max="255"><span class="val" id="effR-val"></span></div>
         <div class="row"><label for="effG">Зелёный</label><input id="effG" type="range" min="0" max="255"><span class="val" id="effG-val"></span></div>
         <div class="row"><label for="effB">Синий</label><input id="effB" type="range" min="0" max="255"><span class="val" id="effB-val"></span></div>
+        <div class="row"><button id="fire2Reset" type="button" class="btn secondary">Сбросить цвета</button></div>
       </div>
       <p class="hint" id="effHint"></p>
       <p class="hint">Выбранный эффект сразу становится текущим (видно в «Сейчас» на вкладке «Управление»). Автосмена, если включена, отсчитывает период заново.</p>

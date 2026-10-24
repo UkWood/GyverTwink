@@ -150,6 +150,13 @@ try {
   check(await until(() => state.curEff !== before), 'кнопка «Следующий» переключает эффект');
   check(await until(async () => (await page.textContent('#cur')).startsWith(state.curEff + '.')), 'название текущего эффекта обновилось');
 
+  console.log('порядок цветов ленты');
+  check((await page.$eval('#colorOrder', (e) => e.value)) === '2', 'по умолчанию порядок GRB');
+  await page.selectOption('#colorOrder', '4');
+  check(await stateIs('order', 4), 'порядок BRG дошёл до гирлянды');
+  await page.selectOption('#colorOrder', '2');
+  check(await stateIs('order', 2), 'порядок возвращён');
+
   console.log('предел светодиодов');
   check((await page.$eval('#ledAm', (e) => e.max)) === '1000', 'в поле количества светодиодов предел 1000');
   await setNumber('#ledAm', 1000);
@@ -248,10 +255,15 @@ try {
   await page.click('#eff-28');
   await page.click('#fire2Lv3');
   check(await until(async () => (await page.$eval('#effB', (e) => e.value)) === '200'), 'после возврата к эффекту цвета на месте');
-  await setRange('#effR', 255); await setRange('#effG', 70); await setRange('#effB', 0);
-  await page.click('#fire2Lv5');
-  await setRange('#effB', 60);
-  check(await until(async () => (await fxGet()).cols === '000000460600be1200ff4600ff8c08ffcd3c'), 'цвета возвращены к исходным');
+  page.once('dialog', (d) => d.dismiss());
+  await page.click('#fire2Reset');
+  await new Promise((r) => setTimeout(r, 300));
+  check((await fxGet()).cols.substr(18, 6) === '056fc8', 'отказ в подтверждении: цвета не сброшены');
+  page.once('dialog', (d) => d.accept());
+  await page.click('#fire2Reset');
+  check(await until(async () => (await fxGet()).cols === '000000460600be1200ff4600ff8c08ffcd3c'), 'кнопка «Сбросить цвета» вернула значения по умолчанию');
+  check(await until(async () => (await page.$eval('#effG', (e) => e.value)) === '70' && (await page.$eval('#effB', (e) => e.value)) === '0'), 'ползунки выбранного уровня 4 показывают значения по умолчанию (255, 70, 0)');
+  check((await fxGet()).shape === 200, 'форма пламени сбросом не тронута');
   await page.click('#eff-24');
 
 

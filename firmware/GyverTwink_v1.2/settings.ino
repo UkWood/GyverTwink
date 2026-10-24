@@ -8,7 +8,7 @@ void settingsTouch() {
 
 // выключено - гасим ленту; настройки пишем в EEPROM отложенно
 void settingsChanged() {
-  if (!cfg.power) strip->showLeds(0);
+  if (!cfg.power) ledsShow(0);
   EEcfg.update();
 }
 
@@ -23,6 +23,13 @@ void setLedAmount(int n) {
   cfg.ledAm = constrain(n, 1, LED_MAX);
   strip->setLeds(leds, cfg.ledAm);
   settingsChanged();
+}
+
+// порядок цветов ленты: сразу виден на следующем кадре
+void setColorOrder(byte o) {
+  colorOrder.order = o;
+  colorOrderApply();
+  EEcolor.update();
 }
 
 void setPower(bool on) {

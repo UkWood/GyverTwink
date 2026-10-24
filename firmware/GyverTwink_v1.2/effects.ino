@@ -179,6 +179,6 @@ void effects() {
     if (fadeCount) fadeCount--;
 
     countP += (speed - 128) / 10;
-    strip->showLeds(limitedBright(cfg.bright));
+    ledsShow(limitedBright(cfg.bright));
   }
 }

@@ -5,6 +5,8 @@ CXXFLAGS = -std=c++17 -g -O1 -Wall -fsanitize=address,undefined -fno-sanitize-re
 DEPS = host_stubs.h host_env.h $(wildcard ../firmware/GyverTwink_v1.2/*.ino) ../firmware/GyverTwink_v1.2/types.h ../firmware/GyverTwink_v1.2/Timer.h ../firmware/GyverTwink_v1.2/web_page.h
 
 test: test_firmware
+	@if grep -n 'strip->showLeds' $(filter-out ../firmware/GyverTwink_v1.2/colorder.ino,$(wildcard ../firmware/GyverTwink_v1.2/*.ino)); then \
+	  echo 'ОШИБКА: кадр на ленту выводит ledsShow() (colorder.ino), прямой вызов strip->showLeds обходит порядок цветов'; exit 1; fi
 	./test_firmware
 
 stand: gt_host

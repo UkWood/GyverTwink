@@ -42,6 +42,17 @@ struct Pwr {
   uint16_t maxMa = POWER_LIMIT_MA;
 };
 
+// порядок цветов ленты (colorder.ino): FastLED настроен на RGB, а ленте цвета уходят в выбранном порядке; блок EEPROM в конце.
+// ORDER_PERM[порядок][k] - какой логический канал (0 R, 1 G, 2 B) идёт в k-м байте, который получает лента.
+// Порядки: 0 RGB, 1 RBG, 2 GRB (по умолчанию, как было до настройки), 3 GBR, 4 BRG, 5 BGR.
+#define ORDER_COUNT 6
+#define ORDER_GRB 2
+struct ColorOrder {
+  byte order = ORDER_GRB;
+};
+extern ColorOrder colorOrder;
+static const byte ORDER_PERM[ORDER_COUNT][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+
 struct Effects {
   bool fav = true;
   byte scale = 50;
