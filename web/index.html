@@ -71,7 +71,14 @@
         <div class="row"><label for="effShape">Колпак</label><input id="effShape" type="range" min="0" max="255"><span class="val" id="effShape-val"></span></div>
         <div class="row"><label for="effSparks">Искры</label><input id="effSparks" type="range" min="0" max="255"><span class="val" id="effSparks-val"></span></div>
         <div class="row"><label for="effFlicker">Трепет</label><input id="effFlicker" type="range" min="0" max="255"><span class="val" id="effFlicker-val"></span></div>
-        <div class="row"><label for="effWhite">Белый огонь</label><input id="effWhite" type="checkbox"></div>
+        <h3>Цвета пламени</h3>
+        <p class="hint">Шесть уровней жара от самого холодного (1, внизу шкалы, обычно чёрный) до самого горячего (6). Между уровнями цвет плавно переходит. Выбери уровень и двигай ползунки: гирлянда показывает результат сразу.</p>
+        <div id="fire2Bar" class="fire-bar"></div>
+        <div id="fire2Levels" class="fire-levels"></div>
+        <p class="hint" id="fire2LevelName"></p>
+        <div class="row"><label for="effR">Красный</label><input id="effR" type="range" min="0" max="255"><span class="val" id="effR-val"></span></div>
+        <div class="row"><label for="effG">Зелёный</label><input id="effG" type="range" min="0" max="255"><span class="val" id="effG-val"></span></div>
+        <div class="row"><label for="effB">Синий</label><input id="effB" type="range" min="0" max="255"><span class="val" id="effB-val"></span></div>
       </div>
       <p class="hint" id="effHint"></p>
       <p class="hint">Выбранный эффект сразу становится текущим (видно в «Сейчас» на вкладке «Управление»). Автосмена, если включена, отсчитывает период заново.</p>

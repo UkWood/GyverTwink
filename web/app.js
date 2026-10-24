@@ -20,7 +20,7 @@ const EFFECT_HINTS = {
   25: 'Масштаб — разница фаз по карте (0 — все дышат одновременно), скорость — частота дыхания.',
   26: 'Масштаб — сколько волн по высоте, скорость — как быстро они идут (ниже 128 — в обратную сторону).',
   27: 'Масштаб — сколько колец от центра карты, скорость — как быстро они расходятся (ниже 128 — к центру).',
-  28: 'Огонь с четырьмя настройками формы. Масштаб и скорость — как у «Огня». Колпак — насколько пламя гаснет к краям и вверху, искры — вылетающие угольки над пламенем, трепет — мелкая быстрая дрожь, белый огонь — без красно-жёлтого цвета. Настройки формы хранятся на гирлянде отдельно и в сцены не входят.',
+  28: 'Огонь с настройками формы и цвета. Масштаб и скорость — как у «Огня». Колпак — насколько пламя гаснет к краям и вверху, искры — вылетающие угольки над пламенем (цвета самого горячего уровня), трепет — мелкая быстрая дрожь. Ниже — цвета шести уровней жара. Эти настройки хранятся на гирлянде отдельно и в сцены не входят.',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -29,7 +29,7 @@ const $ = (id) => document.getElementById(id);
 const FIELD_NAMES = {
   ledAm: 'количество светодиодов', power: 'питание', bright: 'яркость', auto: 'автосмена', rnd: 'случайный порядок',
   period: 'период смены', offOn: 'таймер выключения', offMin: 'минуты до выключения', maxMa: 'лимит тока',
-  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта', shape: 'колпак', sparks: 'искры', flicker: 'трепет', white: 'белый огонь',
+  n: 'номер эффекта', fav: 'избранное', scale: 'масштаб', speed: 'скорость', show: 'показ эффекта', shape: 'колпак', sparks: 'искры', flicker: 'трепет', lv: 'уровень цвета', r: 'красный', g: 'зелёный', b: 'синий',
   tz: 'часовой пояс', lat: 'широта', lon: 'долгота', days: 'дни недели', onT: 'тип включения', offT: 'тип выключения',
   onV: 'время или смещение включения', offV: 'время или смещение выключения', unix: 'время',
   token: 'токен (8–32 символа: латиница, цифры, . _ ~ -)', udpLock: 'блокировка управления по UDP',
@@ -256,8 +256,36 @@ function fillEffect(e) {
       $(id).value = e[key];
       $(id + '-val').textContent = e[key];
     }
-    $('effWhite').checked = !!e.white;
+    fire2Cols = hexToCols(e.cols);
+    fire2Draw();
   }
+}
+
+// цвета шести уровней жара «Огня v2»: строка rrggbb по уровням <-> массив [r, g, b]
+function hexToCols(hex) {
+  const out = [];
+  for (let l = 0; l < FIRE2_LEVELS; l++) out.push([0, 1, 2].map((c) => parseInt(hex.substr(l * 6 + c * 2, 2), 16) || 0));
+  return out;
+}
+
+const FIRE2_LEVELS = 6;
+let fire2Cols = hexToCols('');
+let fire2Level = 0;
+
+// перерисовать кнопки уровней, полоску-образец градиента и ползунки выбранного уровня
+function fire2Draw() {
+  const css = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+  document.querySelectorAll('#fire2Levels button').forEach((b, l) => {
+    b.style.background = css(fire2Cols[l]);
+    b.classList.toggle('sel', l === fire2Level);
+  });
+  $('fire2Bar').style.background = 'linear-gradient(to right, ' + fire2Cols.map(css).join(', ') + ')';
+  ['effR', 'effG', 'effB'].forEach((id, c) => {
+    if (busy.has(id)) return;
+    $(id).value = fire2Cols[fire2Level][c];
+    $(id + '-val').textContent = fire2Cols[fire2Level][c];
+  });
+  $('fire2LevelName').textContent = 'Уровень ' + (fire2Level + 1) + ' из ' + FIRE2_LEVELS + (fire2Level === 0 ? ' (самый холодный)' : fire2Level === FIRE2_LEVELS - 1 ? ' (самый горячий)' : '');
 }
 
 const FIRE2_SLIDERS = [['effShape', 'shape'], ['effSparks', 'sparks'], ['effFlicker', 'flicker']];
@@ -278,7 +306,7 @@ async function editEffect(params) {
   if (selEff < 0) return;
   try {
     const e = await api.post('/api/effect', Object.assign({ n: selEff, show: 1 }, params));
-    if (!['effScale', 'effSpeed', 'effShape', 'effSparks', 'effFlicker'].some((id) => busy.has(id))) fillEffect(e);
+    if (!['effScale', 'effSpeed', 'effShape', 'effSparks', 'effFlicker', 'effR', 'effG', 'effB'].some((id) => busy.has(id))) fillEffect(e);
   } catch (e) {
     toast(e.message);
   }
@@ -315,7 +343,29 @@ function initEffects() {
       send(el.value);
     });
   }
-  $('effWhite').addEventListener('change', () => editEffect({ white: $('effWhite').checked ? 1 : 0 }));
+  // цвета уровней: выбираешь уровень - три ползунка RGB; движение сразу уходит на гирлянду (она показывает этот эффект)
+  const lvBox = $('fire2Levels');
+  for (let l = 0; l < FIRE2_LEVELS; l++) {
+    const b = document.createElement('button');
+    b.id = 'fire2Lv' + l;
+    b.type = 'button';
+    b.textContent = String(l + 1);
+    b.addEventListener('click', () => { fire2Level = l; fire2Draw(); });
+    lvBox.appendChild(b);
+  }
+  // отправка с задержкой у каждого уровня своя: быстрый переход на другой уровень не должен терять последнее движение предыдущего
+  const sendCol = Array.from({ length: FIRE2_LEVELS }, () => debounced((lv, r, g, b) => editEffect({ lv, r, g, b }), 60));
+  ['effR', 'effG', 'effB'].forEach((id, c) => {
+    const el = $(id);
+    trackBusy(el);
+    el.addEventListener('input', () => {
+      fire2Cols[fire2Level][c] = Number(el.value);
+      $(id + '-val').textContent = el.value;
+      fire2Draw();
+      const col = fire2Cols[fire2Level];
+      sendCol[fire2Level](fire2Level, col[0], col[1], col[2]);
+    });
+  });
 }
 
 // ---------- вкладка «Сцены» ----------

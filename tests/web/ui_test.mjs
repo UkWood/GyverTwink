@@ -211,18 +211,40 @@ try {
   await setRange('#effShape', 200);
   await setRange('#effSparks', 10);
   await setRange('#effFlicker', 250);
-  await page.check('#effWhite');
   const fxGet = () => page.evaluate(async () => (await fetch('/api/effect?n=28')).json());
   check(await until(async () => {
     const fx = await fxGet();
-    return fx.shape === 200 && fx.sparks === 10 && fx.flicker === 250 && fx.white === 1;
+    return fx.shape === 200 && fx.sparks === 10 && fx.flicker === 250;
   }), 'настройки формы дошли до гирлянды');
   await page.click('#eff-24');
   check(await until(() => page.isHidden('#fire2Box')), 'у другого эффекта настройки формы скрыты');
   await page.click('#eff-28');
-  check(await until(async () => (await page.$eval('#effShape', (e) => e.value)) === '200' && (await page.$eval('#effWhite', (e) => e.checked)) === true), 'настройки формы запомнились');
-  await page.uncheck('#effWhite');
-  check(await until(async () => (await fxGet()).white === 0), 'белый огонь можно выключить');
+  check(await until(async () => (await page.$eval('#effShape', (e) => e.value)) === '200'), 'настройки формы запомнились');
+  console.log('Огонь v2: цвета уровней');
+  check((await page.$$('#fire2Levels button')).length === 6, 'шесть кнопок уровней');
+  check(await until(async () => (await page.isVisible('#effR')) && (await page.isVisible('#effG')) && (await page.isVisible('#effB'))), 'три ползунка RGB');
+  check(await until(async () => (await fxGet()).cols === '000000460600be1200ff4600ff8c08ffcd3c'), 'цвета по умолчанию (по фото костра) пришли с гирлянды');
+  check(await until(async () => (await page.$eval('#effR', (e) => e.value)) === '0' && (await page.$eval('#fire2LevelName', (e) => e.textContent)).includes('самый холодный')), 'выбран уровень 1: чёрный, подпись «самый холодный»');
+  await page.click('#fire2Lv3');
+  check(await until(async () => (await page.$eval('#effR', (e) => e.value)) === '255' && (await page.$eval('#effG', (e) => e.value)) === '70' && (await page.$eval('#effB', (e) => e.value)) === '0'), 'уровень 4: ползунки показывают его цвет (255, 70, 0)');
+  await setRange('#effG', 111);
+  check(await until(async () => (await fxGet()).cols.substr(18, 6) === 'ff6f00'), 'движение ползунка сразу уходит на гирлянду (уровень 4 = ff6f00)');
+  check((await page.$eval('#fire2Lv3', (e) => e.style.background)).includes('255, 111, 0'), 'кнопка уровня и образец градиента сразу показывают новый цвет');
+  await setRange('#effB', 200);
+  await setRange('#effR', 5);
+  check(await until(async () => (await fxGet()).cols.substr(18, 6) === '056fc8'), 'все три канала уровня настраиваются');
+  check((await fxGet()).cols.substr(0, 18) === '000000460600be1200', 'соседние уровни не тронуты');
+  await page.click('#fire2Lv5');
+  await setRange('#effB', 33);
+  check(await until(async () => (await fxGet()).cols.substr(30, 6) === 'ffcd21'), 'уровень 6 настраивается отдельно');
+  await page.click('#eff-24');
+  await page.click('#eff-28');
+  await page.click('#fire2Lv3');
+  check(await until(async () => (await page.$eval('#effB', (e) => e.value)) === '200'), 'после возврата к эффекту цвета на месте');
+  await setRange('#effR', 255); await setRange('#effG', 70); await setRange('#effB', 0);
+  await page.click('#fire2Lv5');
+  await setRange('#effB', 60);
+  check(await until(async () => (await fxGet()).cols === '000000460600be1200ff4600ff8c08ffcd3c'), 'цвета возвращены к исходным');
   await page.click('#eff-24');
 
 
