@@ -30,7 +30,7 @@
 #define LED_ORDER GRB   // порядок цветов ленты
 #define LED_MAX 500     // макс. светодиодов
 
-#define FW_VERSION "1.3"   // версия прошивки (показывается в веб-интерфейсе)
+#define FW_VERSION "1.4"   // версия прошивки (показывается в веб-интерфейсе)
 
 // ограничение тока ленты: яркость автоматически снижается, чтобы не перегрузить блок питания
 #define POWER_LIMIT_MA 0  // лимит по умолчанию в мА, 0 - выключен (меняется из приложения/по UDP)
@@ -94,6 +94,10 @@ EEManager EEfx(effsX);
 Sched sched;
 EEManager EEsched(sched);
 
+// защита токеном (guard.ino): тоже отдельный блок в конце
+Guard guard;
+EEManager EEguard(guard);
+
 // ================== MISC DATA ==================
 Timer forceTmr(30000, false);
 Timer switchTmr(0, false);
@@ -142,6 +146,8 @@ void setup() {
   fxDefaults(effsX);   // значения по умолчанию, если блока ещё нет (прочитанный из EEPROM их заменит)
   EEfx.begin(EEpwr.nextAddr(), 'a');
   EEsched.begin(EEfx.nextAddr(), 'a');
+  EEguard.begin(EEsched.nextAddr(), 'a');
+  guard.token[TOKEN_MAX] = '\0';   // защита от мусора в EEPROM
 
   cfg.ledAm = constrain(cfg.ledAm, 1, LED_MAX);   // защита от мусора в епром
   switchTmr.setPrd(cfg.prdCh * 60000ul);
@@ -165,6 +171,7 @@ void loop() {
   EEpwr.tick();
   EEfx.tick();
   EEsched.tick();
+  EEguard.tick();
 
   parsing();  // парсим udp
   webTick();  // веб-интерфейс

@@ -34,7 +34,8 @@ Pwr pwr;
 Effects effs[ACTIVE_PALETTES * 2];
 Effects effsX[EXT_EFFECTS];
 Sched sched;
-EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched);
+Guard guard;
+EEManager EEcfg(cfg), EExy(xy), EEmm(mm), EEpwr(pwr), EEeff(effs), EEfx(effsX), EEsched(sched), EEguard(guard);
 CRGBPalette16 paletteArr[ACTIVE_PALETTES];
 // порт веб-сервера берётся из GT_WEB_PORT; без него сервер без сети (юнит-тесты вызывают обработчики через test())
 EncButtonStub btn;
@@ -55,6 +56,7 @@ byte forceEff = 0;
 #include "../firmware/GyverTwink_v1.2/settings.ino"
 #include "../firmware/GyverTwink_v1.2/scenes.ino"
 #include "../firmware/GyverTwink_v1.2/schedule.ino"
+#include "../firmware/GyverTwink_v1.2/guard.ino"
 #include "../firmware/GyverTwink_v1.2/coords.ino"
 #include "../firmware/GyverTwink_v1.2/vcalib.ino"
 #include "../firmware/GyverTwink_v1.2/faders.ino"

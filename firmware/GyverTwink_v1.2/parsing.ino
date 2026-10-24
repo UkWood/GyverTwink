@@ -11,6 +11,7 @@ byte ubuf[MAX_UDP_PACKET + 1];  // +1 под завершающий ноль
 #define PKT_OK 0        // команда выполнена
 #define PKT_INVALID 1   // недопустимый аргумент
 #define PKT_UNKNOWN 2   // неизвестная команда
+#define PKT_DENIED 3    // запрещено: включён токен и команды записи по UDP закрыты (guard.ino)
 byte pktStatus = PKT_OK;
 
 void reply(byte* data, byte size) {
@@ -82,6 +83,11 @@ void parsing() {
 
 void handlePacket() {
   byte answ[10];
+
+  if (!guardUdpAllowed(ubuf[2])) {   // запись по UDP закрыта владельцем (запросы 0, 1, 5, 7 доступны всегда)
+    pktStatus = PKT_DENIED;
+    return;
+  }
 
   switch (ubuf[2]) {
     case 0:   // запрос IP

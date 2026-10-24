@@ -354,6 +354,16 @@ struct HTTPUpload {
   uint8_t buf[1460];
 };
 
+// адрес «клиента» для юнит-тестов защиты (в режиме с сетью - 127.0.0.1)
+inline uint32_t& fakeClientIp() { static uint32_t ip = 0x0A00000A; return ip; }
+struct WebClientStub {
+  struct Addr {
+    uint32_t v;
+    operator uint32_t() const { return v; }
+  };
+  Addr remoteIP() const { return Addr{fakeClientIp()}; }
+};
+
 class ESP8266WebServer {
 public:
   typedef std::function<void()> THandlerFunction;
@@ -391,6 +401,7 @@ public:
   String uri() const { return _uri; }
   HTTPMethod method() const { return _method; }
   HTTPUpload& upload() { return _upload; }
+  WebClientStub& client() { return _client; }
 
   void sendHeader(const String& name, const String& value, bool = false) { _resp.headers[name] = value; }
   void send(int code, const char* type, const String& content) {
@@ -413,7 +424,10 @@ public:
     _args = args;
     if (!body.empty()) _args["plain"] = body;
     _headers.clear();
-    for (auto& h : headers) _headers[lower(h.first)] = h.second;
+    for (auto& h : headers) {   // как в настоящей библиотеке: доступны только заголовки, заказанные через collectHeaders()
+      std::string k = lower(h.first);
+      if (std::find(_collect.begin(), _collect.end(), k) != _collect.end()) _headers[k] = h.second;
+    }
     return dispatch();
   }
 
@@ -424,7 +438,10 @@ public:
     _uri = uri;
     _args.clear();
     _headers.clear();
-    for (auto& h : headers) _headers[lower(h.first)] = h.second;
+    for (auto& h : headers) {
+      std::string k = lower(h.first);
+      if (std::find(_collect.begin(), _collect.end(), k) != _collect.end()) _headers[k] = h.second;
+    }
     return runUpload(filename, chunks, abortAfterFirst);
   }
 
@@ -465,6 +482,7 @@ private:
   HTTPMethod _method = HTTP_GET;
   Response _resp;
   HTTPUpload _upload;
+  WebClientStub _client;
 
   static std::string lower(std::string s) {
     for (auto& ch : s) ch = (char)tolower((unsigned char)ch);
