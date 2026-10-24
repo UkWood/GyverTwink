@@ -143,6 +143,14 @@ button.btn.block { width: 100%; }
   font-size: 14px;
 }
 #effList button.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* «Огонь v2»: образец градиента и кнопки шести уровней жара (цвет кнопки - цвет уровня) */
+.fire-bar { height: 22px; border-radius: 6px; border: 1px solid var(--line); margin: 8px 0; }
+.fire-levels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 6px; }
+.fire-levels button {
+  min-height: 44px; border-radius: 8px; border: 2px solid var(--line); color: #fff; font-weight: 700;
+  text-shadow: 0 0 3px #000, 0 0 3px #000; cursor: pointer;
+}
+.fire-levels button.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #effList button.cur::after { content: " ▶"; color: var(--accent); }
 #toast {
   position: fixed;

@@ -82,12 +82,15 @@ static void webSendState() {
 }
 
 static void webSendEffect(byte n) {
-  char b[160];
+  char b[260];
   int len = snprintf(b, sizeof(b), "{\"n\":%u,\"fav\":%d,\"scale\":%u,\"speed\":%u", (unsigned)n, effAt(n).fav ? 1 : 0,
                      (unsigned)effAt(n).scale, (unsigned)effAt(n).speed);
-  if (n == FIRE2_EFF)   // у «Огня v2» есть ещё четыре параметра
-    len += snprintf(b + len, sizeof(b) - len, ",\"shape\":%u,\"sparks\":%u,\"flicker\":%u,\"white\":%d", (unsigned)fire2.shape,
-                    (unsigned)fire2.sparks, (unsigned)fire2.flicker, fire2.white ? 1 : 0);
+  if (n == FIRE2_EFF) {   // у «Огня v2» ещё три параметра формы и цвета шести уровней жара (cols - 18 байт в hex: rrggbb по уровням)
+    len += snprintf(b + len, sizeof(b) - len, ",\"shape\":%u,\"sparks\":%u,\"flicker\":%u,\"cols\":\"", (unsigned)fire2.shape,
+                    (unsigned)fire2.sparks, (unsigned)fire2.flicker);
+    for (byte l = 0; l < FIRE2_LEVELS; l++) len += snprintf(b + len, sizeof(b) - len, "%02x%02x%02x", fire2.col[l][0], fire2.col[l][1], fire2.col[l][2]);
+    len += snprintf(b + len, sizeof(b) - len, "\"");
+  }
   snprintf(b + len, sizeof(b) - len, "}");
   webJson(200, b);
 }
@@ -297,10 +300,11 @@ static void handleEffectGet() {
 }
 
 // POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа).
-// Для «Огня v2» (n = FIRE2_EFF) ещё shape, sparks, flicker (0-255) и white (0/1); у других эффектов эти поля - ошибка 400
+// Для «Огня v2» (n = FIRE2_EFF) ещё shape, sparks, flicker (0-255) и цвет уровня жара: lv (0-5) вместе с любыми из r, g, b (0-255);
+// у других эффектов эти поля - ошибка 400
 static void handleEffectPost() {
   if (!webAllowed()) return;
-  long n, fav, scale, speed, show, shape, sparks, flicker, white;
+  long n, fav, scale, speed, show, shape, sparks, flicker, lv, cr, cg, cb;
   if (!webEffectArg(n)) return;
   int rf = webArgInt("fav", 0, 1, fav);
   int rs = webArgInt("scale", 0, 255, scale);
@@ -309,13 +313,27 @@ static void handleEffectPost() {
   int rh = webArgInt("shape", 0, 255, shape);
   int rk = webArgInt("sparks", 0, 255, sparks);
   int rl = webArgInt("flicker", 0, 255, flicker);
-  int rt = webArgInt("white", 0, 1, white);
-  if (rf < 0 || rs < 0 || rp < 0 || rw < 0 || rh < 0 || rk < 0 || rl < 0 || rt < 0) {
-    webError(400, rf < 0 ? "fav" : rs < 0 ? "scale" : rp < 0 ? "speed" : rw < 0 ? "show" : rh < 0 ? "shape" : rk < 0 ? "sparks" : rl < 0 ? "flicker" : "white");
-    return;
+  int rv = webArgInt("lv", 0, FIRE2_LEVELS - 1, lv);
+  int rr = webArgInt("r", 0, 255, cr);
+  int rg = webArgInt("g", 0, 255, cg);
+  int rb = webArgInt("b", 0, 255, cb);
+  const int rc[] = {rf, rs, rp, rw, rh, rk, rl, rv, rr, rg, rb};
+  static const char* const names[] = {"fav", "scale", "speed", "show", "shape", "sparks", "flicker", "lv", "r", "g", "b"};
+  for (byte i = 0; i < 11; i++) {
+    if (rc[i] < 0) {
+      webError(400, names[i]);
+      return;
+    }
   }
-  if ((rh > 0 || rk > 0 || rl > 0 || rt > 0) && n != FIRE2_EFF) {
-    webError(400, rh > 0 ? "shape" : rk > 0 ? "sparks" : rl > 0 ? "flicker" : "white");
+  if (n != FIRE2_EFF) {   // поля «Огня v2» чужому эффекту не принадлежат
+    for (byte i = 4; i < 11; i++) {
+      if (rc[i] > 0) {
+        webError(400, names[i]);
+        return;
+      }
+    }
+  } else if ((rr > 0 || rg > 0 || rb > 0) && rv <= 0) {   // цвет без номера уровня: непонятно, куда писать
+    webError(400, "lv");
     return;
   }
   if (rf > 0) effAt(n).fav = fav;
@@ -324,8 +342,16 @@ static void handleEffectPost() {
   if (rh > 0) fire2.shape = shape;
   if (rk > 0) fire2.sparks = sparks;
   if (rl > 0) fire2.flicker = flicker;
-  if (rt > 0) fire2.white = white;
-  if (rf > 0 || rs > 0 || rp > 0 || rh > 0 || rk > 0 || rl > 0 || rt > 0) effSave(n);
+  if (rv > 0) {
+    if (rr > 0) fire2.col[lv][0] = cr;
+    if (rg > 0) fire2.col[lv][1] = cg;
+    if (rb > 0) fire2.col[lv][2] = cb;
+  }
+  bool changed = false;
+  for (byte i = 0; i < 11; i++) {
+    if (i != 3 && i != 7 && rc[i] > 0) changed = true;   // show и lv сами по себе ничего не меняют
+  }
+  if (changed) effSave(n);
   if (rw > 0 && show) {
     forceTmr.stop();
     forceEff = n;   // и цель правок по UDP остаётся этим же эффектом

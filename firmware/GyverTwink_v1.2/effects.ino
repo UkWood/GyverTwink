@@ -46,6 +46,16 @@ static void fxTwinkle(byte scale, byte speed) {
   for (int k = 0; k < sparks; k++) leds[random(n)] = ColorFromPalette(paletteArr[0], random(256), 255, LINEARBLEND);
 }
 
+// цвет «Огня v2» по жару 0..255: шесть уровней fire2.col равномерно по шкале, между ними линейный переход (целые числа)
+static CRGB fire2Color(int heat) {
+  int pos = constrain(heat, 0, 255) * (FIRE2_LEVELS - 1);
+  int k = pos / 255, f = pos % 255;
+  const byte* a = fire2.col[k];
+  if (k >= FIRE2_LEVELS - 1) return CRGB(a[0], a[1], a[2]);
+  const byte* b = fire2.col[k + 1];
+  return CRGB(a[0] + ((int)b[0] - a[0]) * f / 255, a[1] + ((int)b[1] - a[1]) * f / 255, a[2] + ((int)b[2] - a[2]) * f / 255);
+}
+
 // цвет светодиода i для эффектов, которые считаются независимо по каждому светодиоду
 static CRGB fxColor(byte e, int i, byte scale, uint16_t phase) {
   int nx, ny;
@@ -72,7 +82,7 @@ static CRGB fxColor(byte e, int i, byte scale, uint16_t phase) {
       return CRGB(min(heat * 3, 255), heat > 85 ? min((heat - 85) * 3, 255) : 0, heat > 170 ? (heat - 170) * 3 : 0);
     }
     case FX_FIRE2: {
-      // огонь v2: тот же плавный шум, что у «Огня», и четыре параметра формы (fire2)
+      // огонь v2: тот же плавный шум, что у «Огня», три параметра формы и цвета уровней жара (fire2)
       int lift = 255 - ny;
       int noise = inoise8(xy[i][0] * scale / 10, xy[i][1] * scale / 30 + phase, 0);
       int heat = lift * 3 / 2 + noise - 200;
@@ -81,8 +91,7 @@ static CRGB fxColor(byte e, int i, byte scale, uint16_t phase) {
       // колпак: к краям карты и к верху пламя гаснет сильнее
       if (fire2.shape) heat -= ((abs(nx - 128) * 2 * fire2.shape >> 8) * (ny + 64)) >> 8;
       heat = constrain(heat, 0, 255);
-      CRGB c = fire2.white ? CRGB(heat, heat, heat)
-                           : CRGB(min(heat * 3, 255), heat > 85 ? min((heat - 85) * 3, 255) : 0, heat > 170 ? (heat - 170) * 3 : 0);
+      CRGB c = fire2Color(heat);
       // искры: на каждом шаге времени (около 8 раз в секунду на средней скорости) светодиод над основанием вспыхивает с вероятностью до 3% (sparks = 255)
       if (fire2.sparks && ny > 40) {
         uint32_t h = (uint32_t)(i + 1) * 2654435761u ^ (uint32_t)(phase >> 4) * 2246822519u;
@@ -90,10 +99,10 @@ static CRGB fxColor(byte e, int i, byte scale, uint16_t phase) {
         h *= 2246822519u;
         h ^= h >> 13;
         if ((h & 0x1FFF) * 255 < (uint32_t)fire2.sparks * 8192u / 32) {
-          CRGB sp = fire2.white ? CRGB(255, 255, 255) : CRGB(255, 170, 40);
-          c.r = max(c.r, sp.r);
-          c.g = max(c.g, sp.g);
-          c.b = max(c.b, sp.b);
+          const byte* sp = fire2.col[FIRE2_LEVELS - 1];   // искра - цвет самого горячего уровня
+          c.r = max(c.r, sp[0]);
+          c.g = max(c.g, sp[1]);
+          c.b = max(c.b, sp[2]);
         }
       }
       return c;

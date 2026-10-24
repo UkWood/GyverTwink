@@ -585,20 +585,38 @@ TEST(fire2_is_hotter_at_the_bottom_than_at_the_top) {
   CHECK(sumRgb(240, 300) > sumRgb(0, 60) * 2);
 }
 
-TEST(fire2_white_flag_makes_the_fire_colourless) {
+TEST(fire2_palette_interpolates_between_six_levels) {
+  resetAll();
+  CHECK(fire2.col[0][0] == 0 && fire2.col[0][1] == 0 && fire2.col[0][2] == 0);   // по умолчанию самый холодный уровень - чёрный
+  CHECK(fire2Color(0) == CRGB(0, 0, 0));
+  for (int l = 0; l < FIRE2_LEVELS; l++) {
+    fire2.col[l][0] = 10 + l * 40;
+    fire2.col[l][1] = 200 - l * 30;
+    fire2.col[l][2] = l * 5;
+  }
+  for (int l = 0; l < FIRE2_LEVELS; l++) {   // уровни лежат на жаре 0, 51, 102, 153, 204, 255
+    CHECK(fire2Color(l * 51) == CRGB(fire2.col[l][0], fire2.col[l][1], fire2.col[l][2]));
+  }
+  CHECK(fire2Color(255) == CRGB(fire2.col[5][0], fire2.col[5][1], fire2.col[5][2]));
+  CRGB mid = fire2Color(25);   // между уровнями 0 и 1: цвет между ними
+  CHECK(mid.r > fire2.col[0][0] && mid.r < fire2.col[1][0]);
+  CHECK(mid.g < fire2.col[0][1] && mid.g > fire2.col[1][1]);   // убывающий канал тоже интерполируется без переполнения
+  CHECK(fire2Color(-5) == fire2Color(0) && fire2Color(999) == fire2Color(255));   // вне шкалы - крайние уровни
+}
+
+TEST(fire2_uses_the_palette_for_the_whole_flame) {
   resetAll();
   lineUp(300);
-  fire2.white = 1;
-  for (int f = 0; f < 30; f++) runEffect(FIRE2_EFF);
-  bool grey = true;
-  for (int i = 0; i < 300; i++) grey = grey && leds[i].r == leds[i].g && leds[i].g == leds[i].b;
-  CHECK(grey);
-  CHECK(sumRgb(0, 300) > 0);
-  fire2.white = 0;
-  for (int f = 0; f < 30; f++) runEffect(FIRE2_EFF);
-  bool coloured = false;
-  for (int i = 0; i < 300; i++) coloured = coloured || leds[i].r != leds[i].g;
-  CHECK(coloured);
+  fire2.sparks = 0;
+  fire2.flicker = 0;
+  fire2.shape = 0;
+  for (auto& c : fire2.col) c[0] = c[1] = c[2] = 0;
+  fire2.col[5][2] = 255;   // горячий уровень - чисто синий, остальные чёрные
+  for (int f = 0; f < 20; f++) runEffect(FIRE2_EFF);
+  bool onlyBlue = true;
+  for (int i = 0; i < 300; i++) onlyBlue = onlyBlue && leds[i].r == 0 && leds[i].g == 0;
+  CHECK(onlyBlue);
+  CHECK(sumRgb(240, 300) > 0);   // внизу жарче: синий есть
 }
 
 TEST(fire2_sparks_appear_only_above_the_base_and_only_when_enabled) {
@@ -606,20 +624,22 @@ TEST(fire2_sparks_appear_only_above_the_base_and_only_when_enabled) {
   lineUp(300);
   fire2.flicker = 0;
   fire2.shape = 0;
-  const CRGB spark(255, 170, 40);   // цвет искры; обычный цвет огня с такой синей составляющей невозможен (кратна трём)
-  fire2.sparks = 0;
-  int none = 0;
-  for (int f = 0; f < 200; f++) { runEffect(FIRE2_EFF); none += countLeds(0, 300, spark); }
-  CHECK_EQ(none, 0);
-  fire2.sparks = 255;
-  int some = 0, low = 0;
-  for (int f = 0; f < 200; f++) {
-    runEffect(FIRE2_EFF);
-    some += countLeds(0, 300, spark);
-    low += countLeds(270, 300, spark);   // нижние светодиоды (Y больше): у основания искр нет
-  }
-  CHECK(some > 20);
-  CHECK_EQ(low, 0);
+  // сравниваем кадры с искрами и без них при одной и той же фазе: различаются только светодиоды с искрой
+  auto diff = [&](int a, int b) {
+    int n = 0;
+    for (uint16_t ph = 0; ph < 4000; ph += 16) {   // искры меняются раз в 16 единиц фазы
+      for (int i = a; i < b; i++) {
+        fire2.sparks = 255;
+        CRGB with = fxColor(FX_FIRE2, i, 50, ph);
+        fire2.sparks = 0;
+        CRGB without = fxColor(FX_FIRE2, i, 50, ph);
+        n += !(with == without);
+      }
+    }
+    return n;
+  };
+  CHECK(diff(0, 150) > 20);        // верх и середина: искры есть
+  CHECK_EQ(diff(260, 300), 0);     // у основания (Y больше) искр нет
 }
 
 TEST(fire2_shape_darkens_the_edges_and_flicker_changes_the_picture) {
@@ -660,8 +680,8 @@ TEST(fire2_survives_extreme_settings_and_zero_size_map) {
   for (int i = 0; i < LED_MAX; i++) xy[i][0] = xy[i][1] = 77;
   recalcBounds();
   const int v[] = {0, 1, 255};
-  for (int sh : v) for (int sp : v) for (int fl : v) for (int w = 0; w < 2; w++) {
-    fire2.shape = sh; fire2.sparks = sp; fire2.flicker = fl; fire2.white = w;
+  for (int sh : v) for (int sp : v) for (int fl : v) for (int w = 0; w < FIRE2_LEVELS; w++) {
+    fire2.shape = sh; fire2.sparks = sp; fire2.flicker = fl; fire2.col[w][1] = 255 - sh;
     fire2.e.scale = sh; fire2.e.speed = fl;
     for (int f = 0; f < 3; f++) runEffect(FIRE2_EFF);
   }

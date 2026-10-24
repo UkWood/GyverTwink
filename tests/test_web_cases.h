@@ -241,29 +241,38 @@ TEST(web_new_effects_use_their_own_settings_block) {
   CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
 }
 
-TEST(web_fire2_has_four_extra_parameters_in_its_own_block) {
+TEST(web_fire2_has_shape_and_level_colours_in_its_own_block) {
   resetAll();
   Resp r = webGet("/api/effect", {{"n", std::to_string(FIRE2_EFF)}});
   CHECK_EQ(r.code, 200);
   CHECK_EQ(jnum(r, "shape"), 120);
   CHECK_EQ(jnum(r, "sparks"), 80);
   CHECK_EQ(jnum(r, "flicker"), 100);
-  CHECK_EQ(jnum(r, "white"), 0);
   CHECK_EQ(jnum(r, "fav"), 1);
+  CHECK(r.body.find("\"white\"") == std::string::npos);                      // белого огня больше нет
+  CHECK(r.body.find("\"cols\":\"000000460600be1200ff4600ff8c08ffcd3c\"") != std::string::npos);   // шесть уровней по умолчанию (rrggbb)
   CHECK_EQ(jnum(webGet("/api/effect", {{"n", "2"}}), "shape"), -999999);   // у обычного эффекта этих полей нет
   Effects before[ACTIVE_PALETTES * 2];
   memcpy(before, effs, sizeof(effs));
-  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"shape", "7"}, {"sparks", "255"}, {"flicker", "0"}, {"white", "1"}, {"scale", "33"}});
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"shape", "7"}, {"sparks", "255"}, {"flicker", "0"}, {"scale", "33"}});
   CHECK_EQ(r.code, 200);
-  CHECK(fire2.shape == 7 && fire2.sparks == 255 && fire2.flicker == 0 && fire2.white == 1);
+  CHECK(fire2.shape == 7 && fire2.sparks == 255 && fire2.flicker == 0);
   CHECK_EQ(fire2.e.scale, 33);
-  CHECK_EQ(jnum(r, "white"), 1);
   CHECK(EEfire2.updates > 0);
   CHECK_EQ(EEfx.updates, 0);   // блок остальных новых эффектов не записывался
   CHECK_EQ(EEeff.updates, 0);
   CHECK(memcmp(before, effs, sizeof(effs)) == 0);
+  // цвет уровня: lv и любые из r, g, b - меняется только указанное
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"lv", "2"}, {"g", "99"}});
+  CHECK_EQ(r.code, 200);
+  CHECK(fire2.col[2][0] == 190 && fire2.col[2][1] == 99 && fire2.col[2][2] == 0);
+  r = webPost("/api/effect", {{"n", std::to_string(FIRE2_EFF)}, {"lv", "5"}, {"r", "1"}, {"g", "2"}, {"b", "3"}});
+  CHECK(r.body.find("\"cols\":\"") != std::string::npos && r.body.find("010203\"") != std::string::npos);
+  CHECK(fire2.col[5][0] == 1 && fire2.col[5][1] == 2 && fire2.col[5][2] == 3);
+  CHECK(fire2.col[4][0] == 255);   // соседние уровни не тронуты
   // ошибки: всё или ничего
-  const Args bad[] = {{{"shape", "256"}}, {{"sparks", "-1"}}, {{"flicker", "x"}}, {{"white", "2"}}};
+  const Args bad[] = {{{"shape", "256"}}, {{"sparks", "-1"}}, {{"flicker", "x"}}, {{"lv", "6"}, {"r", "1"}}, {{"lv", "1"}, {"b", "256"}},
+                      {{"r", "5"}}, {{"g", "5"}}};   // цвет без номера уровня - ошибка
   for (Args a : bad) {
     a["n"] = std::to_string(FIRE2_EFF);
     a["scale"] = "99";
@@ -271,6 +280,7 @@ TEST(web_fire2_has_four_extra_parameters_in_its_own_block) {
   }
   CHECK_EQ(fire2.e.scale, 33);   // при ошибке ничего не применилось
   CHECK_EQ(webPost("/api/effect", {{"n", "2"}, {"shape", "5"}}).code, 400);   // чужому эффекту параметры огня не принадлежат
+  CHECK_EQ(webPost("/api/effect", {{"n", "2"}, {"lv", "1"}, {"r", "5"}}).code, 400);
   CHECK_EQ(webPost("/api/effect", {{"n", std::to_string(EFFECT_COUNT)}, {"scale", "1"}}).code, 400);
 }
 
