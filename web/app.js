@@ -181,6 +181,7 @@ async function refresh(force) {
     st = await api.get('/api/state');
     setConn(true);
     render(force);
+    spiralInfo();   // число светодиодов могло измениться (S в подсказке схемы)
   } catch (e) {
     setConn(false);
   }
@@ -626,6 +627,127 @@ async function coordsApplyResult(pts, est) {
   coords.sel = 0;
   coordsSetDirty(true);
   coordsSync();
+}
+
+// ---------- схема «спираль» (цилиндр, конус) ----------
+// Лента намотана рядами снизу вверх: counts - светодиодов в рядах N1, N2, ... (нижний первый), остаток до total образует
+// последний (верхний) ряд. Ряды идут слева направо, каждый центрируется; шаг между светодиодами одинаковый во всех рядах
+// (у конуса верхние ряды уже), gap - расстояние между рядами в шагах светодиода. Ось Y направлена вниз, как в кадре камеры:
+// нижний ряд получает наибольший Y (так считает эффект «огонь»). Возвращает {pts, rows} или {error}.
+function spiralLayout(counts, total, gap) {
+  if (!Number.isInteger(total) || total < 1) return { error: 'Нет светодиодов' };
+  if (!Number.isFinite(gap) || gap < 0.2 || gap > 5) return { error: 'Расстояние между рядами: от 0,2 до 5 шагов' };
+  let used = 0;
+  for (let i = 0; i < counts.length; i++) {
+    const n = counts[i];
+    if (!Number.isInteger(n) || n < 1) return { error: 'N' + (i + 1) + ': целое число от 1' };
+    used += n;
+  }
+  if (used > total) return { error: 'Сумма рядов (' + used + ') больше числа светодиодов S (' + total + ')' };
+  const rows = counts.slice();
+  if (used < total || rows.length === 0) rows.push(total - used);   // остаток - верхний ряд
+  const widthU = Math.max(...rows.map((n) => n - 1));   // ширина самого длинного ряда в шагах светодиода
+  const heightU = (rows.length - 1) * gap;
+  const AREA = 240;                                      // поле 0..255 с отступом около 7 по краям
+  let s = Infinity;
+  if (widthU > 0) s = Math.min(s, AREA / widthU);
+  if (heightU > 0) s = Math.min(s, AREA / heightU);
+  if (!Number.isFinite(s)) s = 0;                        // единственный светодиод
+  const pts = [];
+  rows.forEach((n, r) => {
+    const yu = (rows.length - 1 - r) * gap;              // верхний ряд - 0, нижний - самый большой Y
+    for (let i = 0; i < n; i++) {
+      pts.push({
+        x: clamp255(Math.round(127.5 + (i - (n - 1) / 2) * s)),
+        y: clamp255(Math.round(127.5 + (yu - heightU / 2) * s)),
+      });
+    }
+  });
+  return { pts, rows };
+}
+
+const SPIRAL_KEY = 'gt-spiral';
+const spiral = { counts: [''] };   // значения полей N1, N2... как введены (строки)
+
+function spiralRead() {
+  const counts = spiral.counts.map((v) => (v === '' ? NaN : Number(v)));
+  return { counts, gap: Number($('spGap').value.replace(',', '.')) };
+}
+
+function spiralRender() {
+  const box = $('spRows');
+  box.textContent = '';
+  spiral.counts.forEach((v, i) => {
+    const lab = document.createElement('label');
+    lab.append('N' + (i + 1));
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '1';
+    inp.inputMode = 'numeric';
+    inp.value = v;
+    inp.id = 'spN' + (i + 1);
+    inp.addEventListener('input', () => { spiral.counts[i] = inp.value; spiralInfo(); });
+    lab.append(inp);
+    box.append(lab);
+  });
+  $('spDel').disabled = spiral.counts.length <= 1;
+  spiralInfo();
+}
+
+// пояснение под полями: сколько светодиодов в последнем ряду и можно ли строить
+function spiralInfo() {
+  const total = st ? st.ledAm : coords.orig.length;   // актуальное число светодиодов (опрос раз в 2 с), а не загруженной ранее карты
+  const { counts, gap } = spiralRead();
+  const r = spiralLayout(counts, total, gap);
+  const sum = counts.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  $('spBuild').disabled = !!r.error;
+  if (!total) {
+    $('spInfo').textContent = 'Число светодиодов ещё не получено с гирлянды.';
+  } else if (r.error) {
+    $('spInfo').textContent = 'S = ' + total + ', в указанных рядах: ' + sum + '. ' + r.error + '.';
+  } else {
+    const last = r.rows[r.rows.length - 1];
+    $('spInfo').textContent = 'S = ' + total + '. Рядов: ' + r.rows.length + ' (' + r.rows.join(' + ') + '), последний ряд — остаток: ' + last + '.';
+  }
+}
+
+async function spiralBuild() {
+  await coordsLoad();   // число светодиодов берём с гирлянды: сохранение требует то же число
+  const { counts, gap } = spiralRead();
+  const r = spiralLayout(counts, coords.orig.length, gap);
+  if (r.error) { toast(r.error); spiralInfo(); return; }
+  try { localStorage.setItem(SPIRAL_KEY, JSON.stringify({ counts: spiral.counts, gap: $('spGap').value })); } catch (e) { /* не страшно */ }
+  coords.pts = r.pts.map((p) => ({ x: p.x, y: p.y }));
+  coords.est = new Set();
+  coords.sel = 0;
+  coordsSetDirty(true);
+  coordsSync();
+  coordsLedLight();
+  toast('Схема построена: рядов ' + r.rows.length + '. Проверь карту и нажми «Сохранить на гирлянду»', true);
+}
+
+function initSpiral() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SPIRAL_KEY) || 'null');
+    if (saved && Array.isArray(saved.counts) && saved.counts.length >= 1 && saved.counts.length <= 60) {
+      spiral.counts = saved.counts.map((v) => String(v));
+      $('spGap').value = saved.gap;
+    }
+  } catch (e) { /* без сохранённого просто пустые поля */ }
+  $('spAdd').addEventListener('click', () => {
+    if (spiral.counts.length >= 60) return;
+    const prev = spiral.counts[spiral.counts.length - 1];
+    spiral.counts.push(prev);   // новый ряд начинается со значения предыдущего: правят только отличия
+    spiralRender();
+  });
+  $('spDel').addEventListener('click', () => {
+    if (spiral.counts.length > 1) spiral.counts.pop();
+    spiralRender();
+  });
+  $('spGap').addEventListener('input', spiralInfo);
+  $('spBuild').addEventListener('click', spiralBuild);
+  document.addEventListener('gt-tab', (e) => { if (e.detail === 'coords') setTimeout(spiralInfo, 300); });
+  spiralRender();
 }
 
 function initCoords() {
@@ -1336,6 +1458,7 @@ function init() {
   initEffects();
   initScenes();
   initCoords();
+  initSpiral();
   initVcalib();
   initOta();
   initSched();
@@ -1353,4 +1476,4 @@ function startApp() {
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, spiralLayout, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
