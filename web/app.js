@@ -66,7 +66,12 @@ const TOKEN_KEY = 'gt-token';
 const tokenGet = () => { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } };
 const tokenSet = (t) => { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* без хранилища токен придётся вводить заново */ } };
 const tokenClear = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ничего */ } };
-const guardUi = { needed: false, started: false };
+const guardUi = { needed: false, started: false, saving: false };   // saving - идёт сохранение нового токена с этой страницы
+
+// ждём конца сохранения токена (до 3 с), чтобы повторить запрос уже с новым токеном
+async function guardSettled() {
+  for (let i = 0; i < 30 && guardUi.saving; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+}
 
 const api = {
   async call(method, path, params, body) {
@@ -75,33 +80,41 @@ const api = {
       e.code = 'auth';
       throw e;
     }
-    const opt = { method, headers: { 'X-Requested-With': 'GyverTwink' } };
-    const tok = tokenGet();
-    if (tok) opt.headers['X-GT-Token'] = tok;
-    let url = path;
-    if (params) {
-      const qs = new URLSearchParams(params).toString();
-      if (method === 'POST' && body === undefined) {
-        opt.body = qs;
-        opt.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      } else {
-        url += '?' + qs;
+    for (let attempt = 0; ; attempt++) {
+      const opt = { method, headers: { 'X-Requested-With': 'GyverTwink' } };
+      const tok = tokenGet();
+      if (tok) opt.headers['X-GT-Token'] = tok;
+      let url = path;
+      if (params) {
+        const qs = new URLSearchParams(params).toString();
+        if (method === 'POST' && body === undefined) {
+          opt.body = qs;
+          opt.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        } else {
+          url += '?' + qs;
+        }
       }
+      if (body !== undefined) {
+        opt.body = body;
+        opt.headers['Content-Type'] = 'text/plain';
+      }
+      const r = await fetch(url, opt);
+      let data = {};
+      try { data = await r.json(); } catch (e) { /* не JSON */ }
+      if (!r.ok) {
+        // токен только что сменили с этой страницы, а запрос (например, плановый опрос) ушёл ещё со старым: повторяем один раз
+        // с новым, а не показываем окно входа
+        if (data.error === 'auth' && attempt === 0 && (guardUi.saving || tokenGet() !== tok)) {
+          await guardSettled();
+          continue;
+        }
+        if (data.error === 'auth') guardNeeded();
+        const err = new Error(describeError(data.error, r.status));
+        err.code = data.error;
+        throw err;
+      }
+      return data;
     }
-    if (body !== undefined) {
-      opt.body = body;
-      opt.headers['Content-Type'] = 'text/plain';
-    }
-    const r = await fetch(url, opt);
-    let data = {};
-    try { data = await r.json(); } catch (e) { /* не JSON */ }
-    if (!r.ok) {
-      if (data.error === 'auth') guardNeeded();
-      const err = new Error(describeError(data.error, r.status));
-      err.code = data.error;
-      throw err;
-    }
-    return data;
   },
   get(path, params) { return this.call('GET', path, params); },
   post(path, params, body) { return this.call('POST', path, params, body); },
@@ -1603,6 +1616,7 @@ function initGuard() {
       toast('Токен: 8–32 символа (латиница, цифры, . _ ~ -)');
       return;
     }
+    guardUi.saving = true;   // запросы, получившие отказ, пока токен меняется, подождут и повторятся с новым (см. api.call)
     try {
       await api.post('/api/auth', { token: t });
       tokenSet(t);   // эту страницу не разлогиниваем: она уже знает новый токен
@@ -1610,6 +1624,8 @@ function initGuard() {
       toast('Токен сохранён. Запомни его: он нужен на других устройствах', true);
     } catch (e) {
       toast(e.message);
+    } finally {
+      guardUi.saving = false;
     }
     guardLoad();
   });

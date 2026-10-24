@@ -735,6 +735,15 @@ try {
   check(await until(async () => (await authInfo()).on === 1), 'токен сохранён на гирлянде');
   check((await stateWith('')) === 401 && (await stateWith('wrong-token-1')) === 401, 'без токена и с неверным API закрыт (401)');
   check((await stateWith(gen)) === 200, 'с верным токеном API открыт');
+  // гонка, из-за которой на CI падала main: плановый опрос ушёл без токена, пока страница его сохраняла. Теперь запрос повторяется
+  // с новым токеном, а окно входа не появляется (запрос отправляется без токена, токен записывается до прихода ответа)
+  check(await page.evaluate(async (tok) => {
+    tokenClear();
+    const p = api.get('/api/state');
+    tokenSet(tok);
+    const s = await p;
+    return typeof s.ledAm === 'number' && $('login').hidden && !guardUi.needed;
+  }, gen), 'запрос, ушедший без токена, пока страница его сохраняла, повторяется с новым токеном; окно входа не показывается');
   check(await stateIs('ota', 0), 'после смены токена окно закрылось');
   check(await until(async () => (await page.textContent('#gStatus')).includes('Защита включена')), 'карточка защиты: включена');
   check((await page.textContent('#gHint')).includes('остаётся открытым'), 'предупреждение: управление по UDP пока открыто');
