@@ -38,7 +38,7 @@
 ## Сборка
 ```
 pip install platformio
-pio run -e d1_mini          # также nodemcuv2, d1_mini_legacy (ядро 2.7.x)
+pio run -e d1_mini          # также nodemcuv2 (оба на ядре 2.7.x) и d1_mini_core3 (ядро 3.x, только проверка сборки)
 ```
 CI (GitHub Actions) собирает все три окружения на PR и push в `main`. Сеть в сессиях Claude Code ограничена:
 `downloads.arduino.cc`, `arduino.esp8266.com` и GitHub-релизы блокируются, поэтому локально
