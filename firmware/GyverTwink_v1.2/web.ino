@@ -292,7 +292,7 @@ static void handleEffectGet() {
   if (webEffectArg(n)) webSendEffect(n);
 }
 
-// POST /api/effect: n и любые из fav, scale, speed; show=1 - показать этот эффект (как выбор в приложении)
+// POST /api/effect: n и любые из fav, scale, speed; show=1 - сделать этот эффект текущим (без временного показа)
 static void handleEffectPost() {
   if (!webAllowed()) return;
   long n, fav, scale, speed, show;
@@ -310,8 +310,10 @@ static void handleEffectPost() {
   if (rp > 0) effAt(n).speed = speed;
   if (rf > 0 || rs > 0 || rp > 0) effSave(n);
   if (rw > 0 && show) {
-    forceEff = n;
-    forceTmr.restart();
+    forceTmr.stop();
+    forceEff = n;   // и цель правок по UDP остаётся этим же эффектом
+    curEff = n;
+    if (cfg.autoCh) switchTmr.restart();   // отсчёт автосмены начинается заново
   }
   webSendEffect(n);
 }
