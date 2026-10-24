@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [d1_mini, nodemcuv2, d1_mini_legacy]
+        env: [d1_mini, nodemcuv2, d1_mini_core3]   # d1_mini и nodemcuv2 - ядро 2.7.x (для платы), d1_mini_core3 - ядро 3.x (только проверка сборки)
     steps:
       - uses: actions/checkout@v4
 
