@@ -37,8 +37,9 @@ inline long random(long a, long b) { return a + (long)(fakeRng()() % (unsigned l
 inline long random(long b) { return random(0, b); }
 
 #define constrain(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))
-template <typename A, typename B> inline auto min(A a, B b) -> decltype(a < b ? a : b) { return a < b ? a : b; }
-template <typename A, typename B> inline auto max(A a, B b) -> decltype(a > b ? a : b) { return a > b ? a : b; }
+// возврат по значению: у decltype(a < b ? a : b) для одинаковых типов получается ссылка на параметр-копию (висячая ссылка)
+template <typename A, typename B> inline std::common_type_t<A, B> min(A a, B b) { return a < b ? a : b; }
+template <typename A, typename B> inline std::common_type_t<A, B> max(A a, B b) { return a > b ? a : b; }
 
 // ---- сеть ----
 struct IPAddress {
