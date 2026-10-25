@@ -73,7 +73,7 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("DV", 7.5)
     canvas.setFillColor(MUTED)
-    canvas.drawString(15 * mm, 8 * mm, "GyverTwink · быстрый старт · github.com/UkWood/GyverTwink (README и docs/ — подробности)")
+    canvas.drawString(15 * mm, 8 * mm, "GyverTwink UK_Mode · быстрый старт · github.com/UkWood/GyverTwink (README и docs/ — подробности)")
     canvas.drawRightString(A4[0] - 15 * mm, 8 * mm, f"стр. {doc.page}")
     canvas.setStrokeColor(ACCENT)
     canvas.setLineWidth(1.2)
@@ -83,12 +83,12 @@ def footer(canvas, doc):
 
 def build(out):
     doc = BaseDocTemplate(out, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=14 * mm, bottomMargin=14 * mm,
-                          title="GyverTwink: быстрый старт", author="GyverTwink", subject="Краткая инструкция: контроллер, веб-интерфейс, приложение")
+                          title="GyverTwink UK_Mode: быстрый старт", author="GyverTwink UK_Mode", subject="Краткая инструкция: контроллер, веб-интерфейс, приложение")
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="f", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     doc.addPageTemplates([PageTemplate(id="p", frames=[frame], onPage=footer)])
     s = []
 
-    s += [P("GyverTwink — быстрый старт", h1),
+    s += [P("GyverTwink UK_Mode — быстрый старт", h1),
           P("Гирлянда на адресных светодиодах (WS2812) и ESP8266 с управлением по WiFi. Умеет запоминать положение каждого светодиода, "
             "поэтому эффекты идут по форме гирлянды, а не по номеру в ленте. Нужна прошивка <b>1.4+</b>, приложение <b>2.0.0</b>.", sub),
           Spacer(1, 4)]
@@ -139,7 +139,7 @@ def build(out):
 
     s += [P("4. Управление: веб-интерфейс и приложение", h2),
           P("<b>Веб (без приложения).</b> Телефон или компьютер в той же сети: <font name='DV-M'>http://gyvertwink.local</font> или IP гирлянды (виден в роутере и в приложении). "
-            "В режиме точки <font name='DV-M'>GyverTwink</font> откройте <font name='DV-M'>http://192.168.4.1</font> (именно http); на Android на время отключите мобильные данные и ответьте «Да» на «Оставаться в сети без интернета».", base),
+            "В режиме точки <font name='DV-M'>GyverTwink</font> откройте <font name='DV-M'>http://192.168.4.1</font> (именно http); <font color='#C62828'><b>на Android на время отключите мобильные данные и ответьте «Да» на «Оставаться в сети без интернета».</b></font>", base),
           Spacer(1, 3),
           P("<b>Приложение.</b> Скачайте <font name='DV-M'>GyverTwink-2.0.0.apk</font> со страницы Releases репозитория (тег <font name='DV-M'>app-v2.0.0</font>), разрешите установку из неизвестных источников, "
             "поставьте. Оно само найдёт гирлянды в сети (или введите адрес вручную; точка доступа — кнопка «192.168.4.1»), запомнит последнюю и дальше открывает то же, что и веб. "
