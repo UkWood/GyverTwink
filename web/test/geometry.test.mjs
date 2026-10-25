@@ -84,3 +84,51 @@ test('describeError: понятные сообщения', () => {
   assert.match(app.describeError('fs', 500), /флеш/);
   assert.equal(app.describeError('', 500), 'Ошибка 500');
 });
+
+// ---- масштаб карты: колесо мыши и два пальца ----
+const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, a + ' != ' + b);
+const W = 400, H = 300;
+const base = app.fitView([{ x: 0, y: 0 }, { x: 255, y: 255 }], W, H, 28);
+
+test('zoomedView: масштаб 1 без сдвига - исходный вид, масштаб вокруг центра холста', () => {
+  const v1 = app.zoomedView(base, 1, { x: 0, y: 0 }, W, H);
+  assert.deepEqual(v1, base);
+  const v3 = app.zoomedView(base, 3, { x: 0, y: 0 }, W, H);
+  near(v3.s, base.s * 3);
+  // центр холста остаётся на месте: точка, лежавшая в центре, и после увеличения в центре
+  const cw = { x: (W / 2 - base.ox) / base.s, y: (H / 2 - base.oy) / base.s };
+  near(app.toScreen(cw, v3).x, W / 2);
+  near(app.toScreen(cw, v3).y, H / 2);
+  const vp = app.zoomedView(base, 2, { x: 10, y: -5 }, W, H);
+  near(vp.ox, app.zoomedView(base, 2, { x: 0, y: 0 }, W, H).ox + 10);
+});
+
+test('zoomAround: точка карты под курсором остаётся на месте', () => {
+  for (const [z0, f, p] of [[1, 2, { x: 90, y: 40 }], [2, 1.5, { x: 300, y: 250 }], [4, 0.5, { x: 10, y: 10 }], [1.5, 3, { x: 200, y: 150 }]]) {
+    const pan0 = z0 === 1 ? { x: 0, y: 0 } : { x: 17, y: -9 };
+    const before = app.zoomedView(base, z0, pan0, W, H);
+    const world = { x: (p.x - before.ox) / before.s, y: (p.y - before.oy) / before.s };   // без округления до целых, как у toWorld
+    const r = app.zoomAround(z0, pan0, f, p, W, H);
+    near(r.zoom, Math.max(1, Math.min(20, z0 * f)));
+    if (r.zoom > 1) {
+      const after = app.zoomedView(base, r.zoom, r.pan, W, H);
+      const q = app.toScreen({ x: world.x, y: world.y }, after);
+      assert.ok(Math.abs(q.x - p.x) < 1 && Math.abs(q.y - p.y) < 1, JSON.stringify({ z0, f, q }));
+    }
+  }
+});
+
+test('zoomAround: пределы 1 и 20, возврат к масштабу 1 сбрасывает сдвиг', () => {
+  let r = app.zoomAround(15, { x: 5, y: 5 }, 10, { x: 100, y: 100 }, W, H);
+  near(r.zoom, app.ZOOM_MAX);
+  r = app.zoomAround(3, { x: 120, y: -80 }, 0.01, { x: 100, y: 100 }, W, H);
+  assert.deepEqual(r, { zoom: 1, pan: { x: 0, y: 0 } });
+  r = app.zoomAround(1, { x: 0, y: 0 }, 0.5, { x: 50, y: 50 }, W, H);   // дальше вписанного отдалять нельзя
+  assert.deepEqual(r, { zoom: 1, pan: { x: 0, y: 0 } });
+});
+
+test('clampPan: карту нельзя утащить за пределы кадра дальше её размера', () => {
+  assert.deepEqual(app.clampPan(2, { x: 0, y: 0 }, W, H), { x: 0, y: 0 });
+  assert.deepEqual(app.clampPan(2, { x: 99999, y: -99999 }, W, H), { x: W, y: -H });
+  assert.deepEqual(app.clampPan(4, { x: 10, y: 20 }, W, H), { x: 10, y: 20 });
+});

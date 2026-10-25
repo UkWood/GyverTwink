@@ -459,6 +459,7 @@ async function sceneLoad(s) {
     if (s.map) {
       // сцена вернула и схему светодиодов: карта на странице больше не та (правки, не записанные на гирлянду, отбрасываются)
       coordsClearUnder();
+      coordsZoomFit();
       await coordsLoad();
       spiralInfo();
       hexInfo();
@@ -528,6 +529,35 @@ function fitView(pts, w, h, pad) {
   return { s, ox: (w - rx * s) / 2 - minX * s, oy: (h - ry * s) / 2 - minY * s };
 }
 
+// Масштаб карты. base - вид, вписывающий всю карту (fitView), zoom - во сколько раз ближе, pan - сдвиг в пикселях;
+// увеличение идёт вокруг центра холста (w x h). Чистые функции: проверяются в web/test.
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 20;
+
+function zoomedView(base, zoom, pan, w, h) {
+  const cx = w / 2;
+  const cy = h / 2;
+  return { s: base.s * zoom, ox: (base.ox - cx) * zoom + cx + pan.x, oy: (base.oy - cy) * zoom + cy + pan.y };
+}
+
+// сдвиг не уводит карту за пределы кадра дальше, чем на её размер при данном масштабе
+function clampPan(zoom, pan, w, h) {
+  const lx = (w * zoom) / 2;
+  const ly = (h * zoom) / 2;
+  return { x: Math.max(-lx, Math.min(lx, pan.x)), y: Math.max(-ly, Math.min(ly, pan.y)) };
+}
+
+// новое {zoom, pan} после увеличения в factor раз вокруг точки p экрана: точка карты под p остаётся на месте.
+// Масштаб 1 - вся карта по центру (сдвиг сбрасывается).
+function zoomAround(zoom, pan, factor, p, w, h) {
+  const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom * factor));
+  if (nz <= ZOOM_MIN + 1e-9) return { zoom: ZOOM_MIN, pan: { x: 0, y: 0 } };
+  const k = nz / zoom;
+  const cx = w / 2;
+  const cy = h / 2;
+  return { zoom: nz, pan: clampPan(nz, { x: p.x - cx - (p.x - cx - pan.x) * k, y: p.y - cy - (p.y - cy - pan.y) * k }, w, h) };
+}
+
 const toScreen = (p, v) => ({ x: v.ox + p.x * v.s, y: v.oy + p.y * v.s });
 const toWorld = (sx, sy, v) => ({ x: clamp255((sx - v.ox) / v.s), y: clamp255((sy - v.oy) / v.s) });
 
@@ -565,7 +595,7 @@ function suspiciousPoints(pts, k) {
 }
 
 // ---------- вкладка «Координаты» ----------
-const coords = { pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set(), under: [], underOnBoard: false };   // under - контур схемы «соты» (подложка, не записывается); underOnBoard - карта с этим контуром уже сохранена на гирлянде
+const coords = { zoom: 1, pan: { x: 0, y: 0 }, base: null, baseFrozen: null, pointers: new Map(), pinch: null, panning: null, pts: [], orig: [], sel: 0, dirty: false, drag: false, lit: false, view: null, sus: [], est: new Set(), under: [], underOnBoard: false };   // under - контур схемы «соты» (подложка, не записывается); underOnBoard - карта с этим контуром уже сохранена на гирлянде
 
 // контур относится к конкретной карте: любая другая схема (спираль, калибровка, сцена) его убирает
 function coordsClearUnder() {
@@ -614,7 +644,9 @@ function coordsDraw() {
   const under = coords.under.length && $('hxOutline').checked ? coords.under : [];
   // вид подгоняется и под контур схемы, если он показан (светодиоды лежат внутри него и от краёв отступают)
   const viewPts = under.length ? pts.concat(under.flatMap((e) => [{ x: e[0], y: e[1] }, { x: e[2], y: e[3] }])) : pts;
-  coords.view = fitView(viewPts, w, h, 28);
+  // вид: вписывающий всю карту, затем масштаб и сдвиг; пока тянут точку, вписывающий вид не меняется (карта не уезжает из-под пальца)
+  coords.base = coords.baseFrozen || fitView(viewPts, w, h, 28);
+  coords.view = zoomedView(coords.base, coords.zoom, coords.pan, w, h);
   const v = coords.view;
   if (under.length) {
     g.strokeStyle = text;
@@ -639,7 +671,7 @@ function coordsDraw() {
     g.stroke();
     g.globalAlpha = 1;
   }
-  const r = pts.length > 300 ? 2.5 : 4;
+  const r = (pts.length > 300 ? 2.5 : 4) * Math.min(2.5, 1 + (coords.zoom - 1) * 0.3);   // при увеличении точки крупнее
   pts.forEach((p, i) => {
     const q = toScreen(p, v);
     g.fillStyle = 'hsl(' + Math.round((i / pts.length) * 300) + ',80%,55%)';
@@ -704,8 +736,47 @@ function coordsSelect(i) {
   const n = coords.pts.length;
   if (!n) return;
   coords.sel = ((i % n) + n) % n;
+  coordsReveal();
   coordsSync();
   coordsLedLightSoon();
+}
+
+// при увеличении выбранный светодиод не должен оказаться за краем кадра: карта сдвигается так, чтобы он был виден
+function coordsReveal() {
+  const cv = $('cCanvas');
+  const p = coords.pts[coords.sel];
+  if (!p || !coords.view || coords.zoom <= ZOOM_MIN) return;
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  const q = toScreen(p, coords.view);
+  const m = 30;
+  if (q.x >= m && q.x <= w - m && q.y >= m && q.y <= h - m) return;
+  coords.pan = clampPan(coords.zoom, { x: coords.pan.x + w / 2 - q.x, y: coords.pan.y + h / 2 - q.y }, w, h);
+}
+
+// масштаб вокруг точки экрана (по умолчанию центра холста) в factor раз
+function coordsZoom(factor, at) {
+  const cv = $('cCanvas');
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  const r = zoomAround(coords.zoom, coords.pan, factor, at || { x: w / 2, y: h / 2 }, w, h);
+  coords.zoom = r.zoom;
+  coords.pan = r.pan;
+  coordsZoomLabel();
+  coordsDraw();
+}
+
+// вписать карту целиком (после построения новой схемы, по кнопке)
+function coordsZoomFit() {
+  coords.zoom = ZOOM_MIN;
+  coords.pan = { x: 0, y: 0 };
+  coordsZoomLabel();
+  coordsDraw();
+}
+
+function coordsZoomLabel() {
+  const el = $('cZoomVal');
+  if (el) el.textContent = '×' + (Math.round(coords.zoom * 10) / 10);
 }
 
 async function coordsLoad() {
@@ -748,6 +819,7 @@ async function coordsApplyResult(pts, est) {
   await coordsLoad();   // orig - то, что сейчас на гирлянде
   if (pts.length !== coords.orig.length) throw new Error('Число светодиодов изменилось, повтори калибровку');
   coordsClearUnder();   // другая схема: контур «сот» больше не подходит
+  coordsZoomFit();
   coords.pts = pts.map((p) => ({ x: p.x, y: p.y }));
   coords.est = new Set(est);
   coords.sel = 0;
@@ -907,6 +979,7 @@ async function hexBuild() {
   }
   await coordsLoad();   // число светодиодов берём с гирлянды: сохранение требует то же число
   if (coords.orig.length !== need) { toast('Число светодиодов на гирлянде (' + coords.orig.length + ') не совпадает со схемой (' + need + ').'); hexInfo(); return; }
+  coordsZoomFit();   // новая схема показывается целиком
   coords.pts = hex.layout.pts.map((p) => ({ x: p.x, y: p.y }));
   coords.under = hex.layout.outline;
   coords.underOnBoard = false;
@@ -933,6 +1006,7 @@ async function spiralBuild() {
   if (r.error) { toast(r.error); spiralInfo(); return; }
   try { localStorage.setItem(SPIRAL_KEY, JSON.stringify({ counts: spiral.counts, gap: $('spGap').value })); } catch (e) { /* не страшно */ }
   coordsClearUnder();   // другая схема: контур «сот» больше не подходит
+  coordsZoomFit();
   coords.pts = r.pts.map((p) => ({ x: p.x, y: p.y }));
   coords.est = new Set();
   coords.sel = 0;
@@ -985,24 +1059,79 @@ function initSpiral() {
 function initCoords() {
   const cv = $('cCanvas');
   const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  // жесты: колесо мыши и два пальца - масштаб, перетаскивание пустого места при увеличении - сдвиг, перетаскивание точки - правка
+  const two = () => {
+    const [a, b] = Array.from(coords.pointers.values());
+    return { dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+  };
+  cv.addEventListener('wheel', (e) => {
+    if (!coords.pts.length) return;
+    e.preventDefault();   // страница не прокручивается, пока крутят колесо над картой
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 300 : 1;
+    coordsZoom(Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.0015)), pos(e));
+  }, { passive: false });
   cv.addEventListener('pointerdown', (e) => {
     if (!coords.view) return;
     const p = pos(e);
+    coords.pointers.set(e.pointerId, p);
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* синтетическое событие */ }
+    if (coords.pointers.size === 2) {   // второй палец: правка точки и сдвиг отменяются, начинается масштабирование
+      coords.drag = false;
+      coords.panning = null;
+      coords.baseFrozen = null;
+      coords.pinch = two();
+      return;
+    }
+    if (coords.pointers.size > 2) return;
     const i = nearestPoint(coords.pts, p.x, p.y, coords.view, 24);
-    if (i < 0) return;
-    cv.setPointerCapture(e.pointerId);
-    coords.drag = true;
-    coordsSelect(i);
+    if (i >= 0) {
+      coords.baseFrozen = coords.base;
+      coords.drag = true;
+      coordsSelect(i);
+    } else if (coords.zoom > ZOOM_MIN) {
+      coords.panning = { x: p.x, y: p.y, pan: { x: coords.pan.x, y: coords.pan.y } };
+    }
   });
   cv.addEventListener('pointermove', (e) => {
-    if (!coords.drag) return;
     const p = pos(e);
-    const w = toWorld(p.x, p.y, coords.view);
-    coordsEdit(coords.sel, w.x, w.y);
+    if (coords.pointers.has(e.pointerId)) coords.pointers.set(e.pointerId, p);
+    if (coords.pointers.size === 2 && coords.pinch) {
+      const now = two();
+      if (coords.pinch.dist > 0 && now.dist > 0) {
+        const w = cv.clientWidth;
+        const h = cv.clientHeight;
+        const r = zoomAround(coords.zoom, coords.pan, now.dist / coords.pinch.dist, now.mid, w, h);
+        // середина между пальцами ещё и тянет карту за собой
+        coords.zoom = r.zoom;
+        coords.pan = r.zoom > ZOOM_MIN ? clampPan(r.zoom, { x: r.pan.x + now.mid.x - coords.pinch.mid.x, y: r.pan.y + now.mid.y - coords.pinch.mid.y }, w, h) : r.pan;
+        coordsZoomLabel();
+        coordsDraw();
+      }
+      coords.pinch = now;
+      return;
+    }
+    if (coords.drag) {
+      const w = toWorld(p.x, p.y, coords.view);
+      coordsEdit(coords.sel, w.x, w.y);
+    } else if (coords.panning) {
+      coords.pan = clampPan(coords.zoom, { x: coords.panning.pan.x + p.x - coords.panning.x, y: coords.panning.pan.y + p.y - coords.panning.y }, cv.clientWidth, cv.clientHeight);
+      coordsDraw();
+    }
   });
-  const end = () => { coords.drag = false; };
+  const end = (e) => {
+    coords.pointers.delete(e.pointerId);
+    if (coords.pointers.size < 2) coords.pinch = null;
+    if (coords.pointers.size === 0) {
+      coords.drag = false;
+      coords.panning = null;
+      coords.baseFrozen = null;
+    }
+  };
   cv.addEventListener('pointerup', end);
   cv.addEventListener('pointercancel', end);
+  $('cZoomIn').addEventListener('click', () => coordsZoom(1.5));
+  $('cZoomOut').addEventListener('click', () => coordsZoom(1 / 1.5));
+  $('cZoomFit').addEventListener('click', coordsZoomFit);
   $('cPrev').addEventListener('click', () => coordsSelect(coords.sel - 1));
   $('cNext').addEventListener('click', () => coordsSelect(coords.sel + 1));
   $('cIdx').addEventListener('change', () => {
@@ -1713,4 +1842,4 @@ function startApp() {
 }
 
 if (typeof document !== 'undefined') init();
-if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, spiralLayout, flipVertical, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
+if (typeof module !== 'undefined') module.exports = { EFFECT_NAMES, spiralLayout, flipVertical, zoomedView, zoomAround, clampPan, ZOOM_MIN, ZOOM_MAX, tokenValid, genToken, minToTime, timeToMin, tzLabel, daysFromMask, maskFromDays, clockText, degToCenti, todayText, debounced, describeError, fitBytes, hexToPoints, pointsToHex, fitView, toScreen, toWorld, nearestPoint, suspiciousPoints };
