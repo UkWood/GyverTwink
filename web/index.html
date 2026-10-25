@@ -203,6 +203,13 @@
       <p class="hint" id="cEmpty" hidden>Координаты не заданы: все точки в одном месте. Пройдите калибровку.</p>
       <canvas id="cCanvas" aria-label="Карта светодиодов"></canvas>
       <div class="row">
+        <button id="cZoomOut" class="btn secondary" aria-label="Уменьшить">−</button>
+        <button id="cZoomIn" class="btn secondary" aria-label="Увеличить">+</button>
+        <button id="cZoomFit" class="btn secondary">Вписать</button>
+        <span class="val" id="cZoomVal">×1</span>
+      </div>
+      <p class="hint">Масштаб: колесо мыши или два пальца (кнопки «−», «+»). Сдвиг при увеличении: перетащи пустое место. Точку можно перетащить пальцем или мышью.</p>
+      <div class="row">
         <button id="cPrev" class="btn secondary" aria-label="Предыдущий светодиод">◀</button>
         <label>№ <input id="cIdx" type="number" min="1" inputmode="numeric"></label>
         <button id="cNext" class="btn secondary" aria-label="Следующий светодиод">▶</button>
