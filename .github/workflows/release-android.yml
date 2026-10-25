@@ -1,0 +1,58 @@
+name: Release Android app
+
+# Запуск вручную (Actions -> Release Android app -> Run workflow) на ветке main.
+# Собирает подписанный APK из android/, создаёт релиз app-v<версия> и прикладывает файл.
+# Версия должна совпадать с versionName в android/app/build.gradle.kts; текст релиза - android/release-notes.md.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия приложения (например 2.0.0), как versionName в android/app/build.gradle.kts"
+        required: true
+      prerelease:
+        description: "Отметить как пред-релиз"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Версия совпадает с versionName
+        run: |
+          v=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          echo "versionName=$v, запрошено=${{ inputs.version }}"
+          test "$v" = "${{ inputs.version }}"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Тесты и сборка
+        working-directory: android
+        run: gradle --console=plain :core:test :app:assembleRelease
+      - name: Подпись и данные APK
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$apk" | head -5
+          cp "$apk" "GyverTwink-${{ inputs.version }}.apk"
+          ls -l "GyverTwink-${{ inputs.version }}.apk"
+      - name: Создать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="app-v${{ inputs.version }}"
+          flags=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then flags="--prerelease"; fi
+          gh release create "$tag" "GyverTwink-${{ inputs.version }}.apk" \
+            --target "${{ github.sha }}" \
+            --title "Приложение ${{ inputs.version }}" \
+            --notes-file android/release-notes.md $flags
