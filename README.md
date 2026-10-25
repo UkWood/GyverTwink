@@ -27,7 +27,12 @@
 Блок питания должен это выдержать, либо нужно включить ограничение тока (см. ниже).
 
 ## Прошивка
-Основной способ — PlatformIO (так же прошивка собирается в CI):
+**Готовый файл.** Скачай `firmware-d1_mini.bin` (WeMos D1 mini) или `firmware-nodemcuv2.bin` (NodeMCU) со страницы [Releases](https://github.com/UkWood/GyverTwink/releases) (рядом лежит `SHA256SUMS`). Файл всегда собран из `main` workflow'ом `Release firmware` и прикладывается к релизам приложения.
+Первый раз на новую плату заливают **по USB**, адрес `0x0`; дальше обновляют по WiFi (раздел «Обновление прошивки по WiFi»).
+- Из браузера (Chrome или Edge): [Adafruit WebSerial ESPTool](https://adafruit.github.io/Adafruit_WebSerial_ESPTool/): Connect, Offset `0x0`, выбрать файл, Program.
+- Из командной строки: `pip install esptool`, затем `esptool.py --port COM3 write_flash 0x0 firmware-d1_mini.bin` (на Linux и Mac порт вроде `/dev/ttyUSB0`). Плату, на которой уже что-то было, сначала очисти: `esptool.py --port COM3 erase_flash` (сотрутся старые настройки WiFi).
+
+**Сборка из исходников.** Основной способ — PlatformIO (так же прошивка собирается в CI):
 ```
 pip install platformio
 pio run -e d1_mini -t upload      # WeMos D1 mini; для NodeMCU: -e nodemcuv2
@@ -103,7 +108,7 @@ PlatformIO сам скачает FastLED 3.5.0, остальные библио�
 
 ### Обновление прошивки по WiFi
 Вкладка «Прошивка». Чтобы никто в сети не мог прошить гирлянду, обновление работает только в «окне», которое открывается **физически — тремя быстрыми нажатиями кнопки на гирлянде**
-(лента мигнёт голубым, окно открыто 5 минут). Выбери `firmware.bin` (артефакт сборки в GitHub Actions или файл из релиза), нажми «Загрузить» и не выключай питание.
+(лента мигнёт голубым, окно открыто 5 минут). Выбери файл прошивки (`firmware-d1_mini.bin` или `firmware-nodemcuv2.bin` из [Releases](https://github.com/UkWood/GyverTwink/releases), либо артефакт сборки в GitHub Actions), нажми «Загрузить» и не выключай питание.
 Страница проверит файл (должен начинаться с байта `0xE9`), дождётся перезагрузки и покажет новую версию.
 
 ### Безопасность веб-интерфейса

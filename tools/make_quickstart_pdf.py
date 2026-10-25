@@ -109,12 +109,14 @@ def build(out):
 
     s += [P("2. Прошивка контроллера", h2)]
     s += steps([
-        "Установите PlatformIO и выполните в папке проекта (подходит ядро ESP8266 2.7.x, оно задано в проекте):",
+        "Скачайте файл со страницы Releases репозитория: <font name='DV-M'>firmware-d1_mini.bin</font> (WeMos D1 mini) или <font name='DV-M'>firmware-nodemcuv2.bin</font> (NodeMCU).",
+        "Первый раз — <b>по USB</b>, адрес <font name='DV-M'>0x0</font>. Из браузера (Chrome или Edge): <font name='DV-M'>adafruit.github.io/Adafruit_WebSerial_ESPTool</font> → Connect → Offset <font name='DV-M'>0x0</font> → выбрать файл → Program. Или из командной строки:",
     ])
-    s += [P("pip install platformio<br/>pio run -e d1_mini -t upload&nbsp;&nbsp;&nbsp;(для NodeMCU: -e nodemcuv2)", code),
-          P("Число светодиодов и пины меняются в начале <font name='DV-M'>GyverTwink_v1.2.ino</font> (по умолчанию D1/D3). "
+    s += [P("pip install esptool<br/>esptool.py --port COM3 write_flash 0x0 firmware-d1_mini.bin", code),
+          P("Плату, на которой что-то было, сначала очистите: <font name='DV-M'>esptool.py --port COM3 erase_flash</font> (сотрутся старые настройки WiFi). Из исходников: <font name='DV-M'>pio run -e d1_mini -t upload</font>. "
+            "Число светодиодов и пины меняются в начале <font name='DV-M'>GyverTwink_v1.2.ino</font> (по умолчанию D1/D3). "
             "Дальше обновлять можно <b>по WiFi</b>: нажмите кнопку на гирлянде <b>три раза подряд</b> (лента мигнёт голубым, окно открыто 5 минут), "
-            "в веб-интерфейсе вкладка «Прошивка» → выберите <font name='DV-M'>firmware.bin</font> → «Загрузить». Не выключайте питание во время записи.", base)]
+            "в веб-интерфейсе вкладка «Прошивка» → выберите файл → «Загрузить». Не выключайте питание во время записи.", base)]
 
     s += [P("3. Первый запуск и WiFi", h2)]
     s += steps([

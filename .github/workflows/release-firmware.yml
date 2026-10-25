@@ -1,0 +1,73 @@
+name: Release firmware
+
+# Запуск вручную (Actions -> Release firmware -> Run workflow) или из workflow Release Android app.
+# Собирает прошивку для плат (d1_mini и nodemcuv2, ядро 2.7.x) из выбранной ветки и прикладывает
+# firmware-d1_mini.bin, firmware-nodemcuv2.bin и SHA256SUMS к релизу с тегом tag:
+# релиз уже есть (например app-v2.0.0) - файлы добавляются или заменяются; нет - создаётся новый.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег релиза: существующий (например app-v2.0.0) или новый (например fw-v1.4)"
+        required: true
+      title:
+        description: "Название нового релиза (для существующего не используется)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-release-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Сборка (d1_mini, nodemcuv2)
+        run: |
+          pio run -e d1_mini -e nodemcuv2
+          mkdir -p dist
+          for env in d1_mini nodemcuv2; do
+            cp ".pio/build/$env/firmware.bin" "dist/firmware-$env.bin"
+            size=$(stat -c%s "dist/firmware-$env.bin")
+            echo "firmware-$env.bin: $size байт"
+            test "$size" -lt 921600
+            # прошивка ESP8266 начинается с байта 0xE9
+            test "$(head -c1 "dist/firmware-$env.bin" | xxd -p)" = "e9"
+          done
+          (cd dist && sha256sum firmware-*.bin > SHA256SUMS && cat SHA256SUMS)
+      - name: Прикрепить к релизу
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          TITLE: ${{ inputs.title }}
+        run: |
+          ver=$(grep -oP '#define FW_VERSION "\K[^"]+' firmware/GyverTwink_v1.2/GyverTwink_v1.2.ino)
+          short=$(git rev-parse --short HEAD)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/firmware-d1_mini.bin dist/firmware-nodemcuv2.bin dist/SHA256SUMS --clobber
+            echo "Файлы добавлены к существующему релизу $TAG (версия прошивки $ver, коммит $short)"
+          else
+            cat > notes.md <<NOTES
+          **Прошивка GyverTwink $ver** (коммит $short).
+
+          - \`firmware-d1_mini.bin\` - WeMos D1 mini, \`firmware-nodemcuv2.bin\` - NodeMCU; \`SHA256SUMS\` - контрольные суммы.
+          - Первая заливка на новую плату - по USB (адрес \`0x0\`), дальше обновление по WiFi через веб-интерфейс (вкладка «Прошивка»). Подробно: README, раздел «Прошивка».
+          NOTES
+            gh release create "$TAG" dist/firmware-d1_mini.bin dist/firmware-nodemcuv2.bin dist/SHA256SUMS \
+              --target "${{ github.sha }}" --title "${TITLE:-Прошивка $ver}" --notes-file notes.md
+          fi

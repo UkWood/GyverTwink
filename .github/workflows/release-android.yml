@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # запуск Release firmware (прошивка прикладывается к тому же релизу)
 
 jobs:
   release:
@@ -56,3 +57,7 @@ jobs:
             --target "${{ github.sha }}" \
             --title "Приложение ${{ inputs.version }}" \
             --notes-file android/release-notes.md $flags
+      - name: Приложить прошивку к релизу
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-firmware.yml --ref "${{ github.ref_name }}" -f tag="app-v${{ inputs.version }}"
