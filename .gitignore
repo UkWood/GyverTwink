@@ -4,3 +4,7 @@ tests/test_firmware
 tests/gt_host
 tests/web/node_modules/
 tests/web/package-lock.json
+android/.gradle/
+android/**/build/
+android/local.properties
+*.apk

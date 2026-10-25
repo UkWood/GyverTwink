@@ -37,6 +37,7 @@ header {
   margin: 0 auto;
 }
 h1 { font-size: 20px; margin: 0; }
+#appSwitch { min-height: 36px; padding: 0 12px; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); }
 #conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 #conn::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
 #conn.ok::before { background: var(--ok); }
