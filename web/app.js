@@ -1303,6 +1303,16 @@ async function openVideo(file) {
   return { video, url };
 }
 
+// результат разбора (видео или живая камера) -> редактор координат; возвращает сводку для строки состояния
+async function vcApplyResult(res) {
+  const grid = toGridCoords(res.points, res.w);
+  const est = [];
+  res.points.forEach((q, i) => { if (q.est) est.push(i); });
+  await coordsApplyResult(grid, est);
+  showTab('coords');
+  return 'Найдено ' + res.found + ' из ' + res.total + ' светодиодов' + (est.length ? ' (остальные оценены по соседям)' : '') + '. Проверь точки и сохрани.';
+}
+
 async function vcAnalyze() {
   const file = $('vFile').files[0];
   if (!file || vc.analyzing) return;
@@ -1325,13 +1335,8 @@ async function vcAnalyze() {
       $('vBar2').style.width = Math.round((base + span * (done / total)) * 100) + '%';
       $('vResult').textContent = stage === 'marker' ? 'Ищу вспышку-маркер…' : 'Нахожу светодиоды: ' + done + ' из ' + total;
     }, vc.abort);
-    const grid = toGridCoords(res.points, res.w);
-    const est = [];
-    res.points.forEach((q, i) => { if (q.est) est.push(i); });
     $('vBar2').style.width = '100%';
-    $('vResult').textContent = 'Найдено ' + res.found + ' из ' + res.total + ' светодиодов' + (est.length ? ' (остальные оценены по соседям)' : '') + '. Проверь точки и сохрани.';
-    await coordsApplyResult(grid, est);
-    showTab('coords');
+    $('vResult').textContent = await vcApplyResult(res);
     toast('Видео разобрано: проверь точки и нажми «Сохранить»', true);
   } catch (e) {
     $('vResult').textContent = e.message;
@@ -1364,6 +1369,180 @@ function initVcalib() {
   $('vAnalyze').addEventListener('click', vcAnalyze);
   $('vCancel').addEventListener('click', () => { if (vc.abort) vc.abort.aborted = true; });
   document.addEventListener('gt-tab', (e) => { if (e.detail === 'vcalib') vcRefresh(); });
+}
+
+// ---------- живая камера (только в приложении для Android: window.GTApp.camera*, docs/ANDROID_APP.md) ----------
+// Приложение снимает яркость кадров и хранит запись у себя; разбор - тот же analyzeVideo, что для видео из файла
+const live = { timer: 0, running: false, abort: null, note: '' };   // note - итог последней съёмки: остаётся на экране, пока не начнут новую
+const LIVE_DELAY_SEC = 2;   // пауза до серии: запись уже идёт, телефон не трогают
+
+function liveAvailable() {
+  return typeof window !== 'undefined' && !!window.GTApp && typeof window.GTApp.cameraStart === 'function';
+}
+
+function liveStatus() {
+  try { return JSON.parse(window.GTApp.cameraStatus()); } catch (e) { return { state: 'off' }; }
+}
+
+const liveSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function liveB64(b64) {
+  const bin = atob(b64);
+  const a = new Uint8Array(bin.length);
+  for (let i = 0; i < a.length; i++) a[i] = bin.charCodeAt(i);
+  return a;
+}
+
+// кадр -> холст; для показа растягиваем яркость (в тёмной комнате кадр почти чёрный)
+function liveDraw(gray, w, h) {
+  const cv = $('lvCanvas');
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  let acc = 0;
+  let hi = 255;
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > gray.length * 0.002) { hi = v; break; } }
+  const k = 255 / Math.max(hi, 40);
+  const g = cv.getContext('2d');
+  const img = g.createImageData(w, h);
+  for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
+    const v = Math.min(255, gray[i] * k);
+    img.data[j] = img.data[j + 1] = img.data[j + 2] = v;
+    img.data[j + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
+const LIVE_TEXT = {
+  off: 'Камера выключена.',
+  asking: 'Разреши доступ к камере…',
+  starting: 'Запускаю камеру…',
+  ready: 'Камера готова. Проверь, что вся гирлянда в кадре, и погаси свет.',
+};
+
+function liveRender() {
+  const st = liveStatus();
+  const on = st.state === 'ready';
+  $('lvCam').textContent = st.state === 'off' || st.state === 'error' ? 'Включить камеру' : 'Выключить камеру';
+  $('lvCam').disabled = live.running;
+  $('lvStart').disabled = !on || live.running;
+  $('lvCanvas').hidden = !(on || live.running);
+  if (!live.running) $('lvStatus').textContent = live.note || (st.state === 'error' ? st.message : (st.message && st.state === 'off' ? st.message : LIVE_TEXT[st.state] || ''));
+  if (on || live.running) {
+    const b64 = window.GTApp.cameraLatest();
+    if (b64 && st.w && st.h) liveDraw(liveB64(b64), st.w, st.h);
+  }
+}
+
+// опрос состояния и показ кадра, пока открыта вкладка «Калибровка» и камера не выключена
+function liveTick() {
+  clearTimeout(live.timer);
+  if (!liveAvailable()) return;
+  try { liveRender(); } catch (e) { /* страница может быть закрыта */ }
+  const active = document.getElementById('tab-vcalib').classList.contains('active');
+  const st = liveStatus();
+  if (active && (st.state !== 'off' || live.running)) live.timer = setTimeout(liveTick, live.running ? 400 : 150);
+}
+
+// кадр записи в момент t (с) как {w, h, g}; изредка отдаём управление, чтобы работала полоса прогресса и отмена
+function liveSampler(w, h) {
+  let n = 0;
+  return async (t) => {
+    if (++n % 25 === 0) await liveSleep(0);
+    const b64 = window.GTApp.cameraFrameAt(t);
+    const a = b64 ? liveB64(b64) : null;
+    if (!a || a.length !== w * h) throw new Error('Нет кадра камеры: запись повреждена, повтори съёмку');
+    const g = new Float32Array(w * h);
+    for (let i = 0; i < g.length; i++) g[i] = a[i];
+    return { w, h, g };
+  };
+}
+
+async function liveRun() {
+  if (live.running || !liveAvailable()) return;
+  const step = Number($('vStep').value);
+  if (!(step >= 60 && step <= 1000)) { toast('Укажи шаг серии от 60 до 1000 мс'); return; }
+  if (liveStatus().state !== 'ready') { toast('Сначала включи камеру'); return; }
+  live.running = true;
+  live.note = '';
+  live.abort = { aborted: false };
+  $('lvCancel').hidden = false;
+  $('lvBar').style.width = '0%';
+  liveRender();
+  liveTick();
+  let started = false;
+  try {
+    vc.st = await api.get('/api/vcalib');
+    const p = vc.st;
+    $('lvStatus').textContent = 'Снимаю серию, не двигай телефон…';
+    window.GTApp.cameraRecord(true);
+    vc.st = await api.post('/api/vcalib/start', { delay: LIVE_DELAY_SEC, step });
+    started = true;
+    vcRenderStatus();
+    vcRefresh();
+    const total = vcTotalSec(LIVE_DELAY_SEC, step, p.n, p);
+    const t0 = Date.now();
+    // ждём конца серии на гирлянде (она сама возвращает эффекты); камера должна оставаться включённой
+    while (!live.abort.aborted) {
+      await liveSleep(250);
+      const cs = liveStatus();
+      if (cs.state !== 'ready') throw new Error(cs.message || 'Камера выключилась во время съёмки');
+      if (!cs.rec) throw new Error(cs.message || 'Запись остановилась');
+      $('lvBar').style.width = Math.min(60, Math.round(((Date.now() - t0) / 1000 / total) * 60)) + '%';
+      if (vc.st && !vc.st.run && Date.now() - t0 > 1500) break;
+      if (Date.now() - t0 > (total + 30) * 1000) throw new Error('Серия не закончилась вовремя: проверь связь с гирляндой');
+    }
+    window.GTApp.cameraRecord(false);
+    started = false;
+    if (live.abort.aborted) throw new Error('Прервано');
+    const info = liveStatus();
+    if (info.frames < 10) throw new Error('Камера дала слишком мало кадров (' + info.frames + ')');
+    $('lvStatus').textContent = 'Разбираю запись…';
+    const sample = liveSampler(info.w, info.h);
+    const res = await analyzeVideo(sample, info.ms / 1000, { n: p.n, step, flash: p.flash, gap: p.gap }, (stage, done, tot) => {
+      const base = stage === 'marker' ? 0.6 : 0.7;
+      const span = stage === 'marker' ? 0.1 : 0.3;
+      $('lvBar').style.width = Math.round((base + span * (done / tot)) * 100) + '%';
+      $('lvStatus').textContent = stage === 'marker' ? 'Ищу вспышку-маркер…' : 'Нахожу светодиоды: ' + done + ' из ' + tot;
+    }, live.abort);
+    $('lvBar').style.width = '100%';
+    live.note = await vcApplyResult(res);
+    $('lvStatus').textContent = live.note;
+    toast('Запись разобрана: проверь точки и нажми «Сохранить»', true);
+  } catch (e) {
+    live.note = e.message;
+    $('lvStatus').textContent = e.message;
+    toast(e.message);
+    if (started) {
+      try { window.GTApp.cameraRecord(false); } catch (e2) { /* камера уже закрыта */ }
+    }
+  } finally {
+    if (started || (vc.st && vc.st.run)) {
+      try { vc.st = await api.post('/api/vcalib/stop'); vcRenderStatus(); } catch (e) { /* серия уже кончилась */ }
+    }
+    try { window.GTApp.cameraClear(); } catch (e) { /* нечего чистить */ }
+    live.running = false;
+    $('lvCancel').hidden = true;
+    liveRender();
+    liveTick();
+  }
+}
+
+function initLive() {
+  if (!liveAvailable()) return;
+  $('liveCard').hidden = false;
+  $('lvCam').addEventListener('click', () => {
+    const st = liveStatus();
+    live.note = '';
+    if (st.state === 'off' || st.state === 'error') window.GTApp.cameraStart(); else window.GTApp.cameraStop();
+    liveTick();
+  });
+  $('lvStart').addEventListener('click', liveRun);
+  $('lvCancel').addEventListener('click', () => { if (live.abort) live.abort.aborted = true; });
+  document.addEventListener('gt-tab', (e) => {
+    if (e.detail === 'vcalib') { liveRender(); liveTick(); } else if (!live.running && liveStatus().state !== 'off') window.GTApp.cameraStop();   // ушли с вкладки - камеру освобождаем
+  });
+  liveRender();
 }
 
 // ---------- вкладка «Прошивка» (OTA) ----------
@@ -1835,6 +2014,7 @@ function init() {
   initSpiral();
   initHex();
   initVcalib();
+  initLive();
   initOta();
   initSched();
   initGuard();

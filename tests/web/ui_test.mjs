@@ -18,6 +18,67 @@ function loadPlaywright() {
 }
 const { chromium } = loadPlaywright();
 
+// Подмена моста приложения для Android: «камера» рисует кадры серии тем же способом, что make_calib_video.py (лампа, шум, пятна светодиодов)
+function fakeCameraBridge(cfg) {
+  const W = cfg.W, H = cfg.H, FPS = 22;
+  const cam = { state: 'off', rec: false, recStart: 0, recEnd: 0, seriesStart: null, cleared: 0, started: 0, stopped: 0 };
+  window.__cam = cam;
+  const origFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    const r = origFetch.apply(this, arguments);
+    if (String(url).includes('/api/vcalib/start') && opts && opts.method === 'POST') r.then(() => { cam.seriesStart = performance.now(); });
+    return r;
+  };
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(2 * Math.PI * rnd());
+  const sigma = 2.2 * W / 320;
+  function blob(img, cx, cy, amp, sg) {
+    const r = Math.floor(sg * 3) + 1;
+    for (let y = Math.max(0, Math.floor(cy) - r); y < Math.min(H, Math.floor(cy) + r + 1); y++) {
+      for (let x = Math.max(0, Math.floor(cx) - r); x < Math.min(W, Math.floor(cx) + r + 1); x++) {
+        img[y * W + x] += amp * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * sg * sg));
+      }
+    }
+  }
+  const n = cfg.p.n, step = cfg.step / 1000;
+  const flashStart = cfg.delay + cfg.p.dark / 1000;
+  const seqStart = flashStart + (cfg.p.flash + cfg.p.gap) / 1000;
+  const markers = [];
+  for (let k = 0; k < Math.min(n, 25); k++) markers.push(Math.floor(k * n / Math.min(n, 25)));
+  function render(tRec) {   // tRec - секунды от начала записи
+    const e = cam.seriesStart === null ? -1 : tRec - (cam.seriesStart - cam.recStart) / 1000;
+    const img = new Float32Array(W * H).fill(22);
+    blob(img, W * 0.8, H * 0.15, 90, 6 * W / 320);
+    blob(img, W * 0.2 + 3.5 * tRec, H * 0.75 - tRec, 35, 9 * W / 320);
+    if (e >= 0) {
+      if (e >= flashStart && e < flashStart + cfg.p.flash / 1000) for (const i of markers) blob(img, cfg.pts[i][0], cfg.pts[i][1], 150, sigma);
+      if (e >= seqStart && e < seqStart + n * step) blob(img, cfg.pts[Math.floor((e - seqStart) / step)][0], cfg.pts[Math.floor((e - seqStart) / step)][1], 150, sigma);
+    }
+    const k = 1 + 0.08 * Math.sin(tRec / 4);
+    const out = new Uint8Array(W * H);
+    for (let i = 0; i < out.length; i++) out[i] = Math.max(0, Math.min(255, img[i] * k + 2.5 * gauss()));
+    let bin = '';
+    for (let i = 0; i < out.length; i += 8192) bin += String.fromCharCode.apply(null, out.subarray(i, i + 8192));
+    return btoa(bin);
+  }
+  const elapsed = () => (cam.rec ? performance.now() : cam.recEnd) - cam.recStart;
+  window.GTApp = {
+    info: () => '{}',
+    changeDevice: () => {},
+    cameraStart() { cam.started++; cam.state = 'asking'; setTimeout(() => { if (cam.state === 'asking') cam.state = 'ready'; }, 250); },
+    cameraStop() { cam.stopped++; cam.state = 'off'; cam.rec = false; },
+    cameraStatus() {
+      const ms = Math.max(0, Math.round(elapsed()));
+      return JSON.stringify({ state: cam.state, message: '', w: W, h: H, rec: cam.rec, frames: Math.floor(ms / 1000 * FPS), ms });
+    },
+    cameraLatest: () => render(Math.max(0, elapsed()) / 1000),
+    cameraRecord(on) { if (on) { cam.rec = true; cam.recStart = performance.now(); cam.seriesStart = null; } else if (cam.rec) { cam.rec = false; cam.recEnd = performance.now(); } },
+    cameraFrameAt: (t) => render(t),
+    cameraClear() { cam.cleared++; },
+  };
+}
+
 let failed = 0;
 function check(cond, msg) {
   console.log((cond ? '  ok:   ' : '  FAIL: ') + msg);
@@ -788,6 +849,63 @@ try {
     check(await fitsScreen(), 'вкладка «Калибровка» помещается по ширине экрана 390 px');
     await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_vcalib.png'), fullPage: true });
     fs.rmSync(tmp, { recursive: true, force: true });
+    await page.click('[data-tab=control]');
+    jsErrors.length = 0;
+  }
+
+
+  console.log('калибровка живой камерой (мост window.GTApp)');
+  {
+    const p = (await (await fetch(base + '/api/vcalib')).json());
+    const W = 240, H = 426, cell = W / 60;
+    const truth = Array.from({ length: p.n }, (_, i) => [Math.round(30 + 25 * Math.cos((i / p.n) * 2 * Math.PI)), Math.round(40 + 25 * Math.sin((i / p.n) * 2 * Math.PI))]);
+    const pts = truth.map((g) => [(g[0] + 0.5) * cell, (g[1] + 0.5) * cell]);
+    check(await page.isHidden('#liveCard'), 'в браузере карточка «Камера телефона» скрыта');
+    const lp = await ctx.newPage();
+    const lerrs = [];
+    lp.on('pageerror', (e) => lerrs.push(e.message));
+    await lp.addInitScript(fakeCameraBridge, { W, H, pts, p: { n: p.n, flash: p.flash, gap: p.gap, dark: p.dark }, step: 120, delay: 2 });
+    await lp.goto(base + '/');
+    await lp.click('[data-tab=vcalib]');
+    check(await lp.isVisible('#liveCard'), 'в приложении карточка «Камера телефона» видна');
+    check(await lp.isDisabled('#lvStart') && await lp.isHidden('#lvCanvas'), 'камера выключена: съёмка недоступна, кадра нет');
+    await lp.click('#lvCam');
+    check(await until(async () => (await lp.textContent('#lvStatus')).includes('Разреши доступ')), 'пока система спрашивает разрешение, подсказка про доступ');
+    check(await until(async () => !(await lp.isDisabled('#lvStart')), 4000), 'камера включилась: съёмка доступна');
+    check(await lp.isVisible('#lvCanvas'), 'кадр камеры показан');
+    check(await until(async () => (await lp.$eval('#lvCanvas', (c) => c.width)) === W, 3000), 'размер холста совпал с кадром камеры');
+    const lit = await lp.evaluate(() => { const c = document.getElementById('lvCanvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let mx = 0; for (let i = 0; i < d.length; i += 4) mx = Math.max(mx, d[i]); return mx; });
+    check(lit > 100, 'на показанном кадре яркость растянута (в тёмной комнате виден свет): ' + lit);
+
+    await lp.fill('#vStep', '120');
+    await lp.click('#lvStart');
+    check(await until(() => state.calib === 1, 6000), 'серия на гирлянде запущена кнопкой «Снять и разобрать»');
+    check(await lp.isVisible('#lvCancel') && await lp.isDisabled('#lvStart') && await lp.isDisabled('#lvCam'), 'во время съёмки: доступна только отмена');
+    check(await until(async () => await lp.$eval('#tab-coords', (e) => e.classList.contains('active')), 120000), 'запись разобрана: открылась вкладка «Координаты»');
+    check((await lp.textContent('#lvStatus')).includes('Найдено 120 из 120'), 'в строке состояния сводка: ' + (await lp.textContent('#lvStatus')));
+    const got = await lp.evaluate(() => coords.pts.map((q) => [q.x, q.y]));
+    const bad = [];
+    got.forEach((q, i) => { if (Math.abs(q[0] - truth[i][0]) > 1 || Math.abs(q[1] - truth[i][1]) > 1) bad.push(i); });
+    check(got.length === p.n && bad.length === 0, 'найденные светодиоды совпадают с настоящими с точностью до клетки сетки' + (bad.length ? ' (расхождения: ' + bad.slice(0, 10).join(',') + ')' : ''));
+    check((await (await fetch(base + '/api/vcalib')).json()).run === 0, 'серия на гирлянде закончилась');
+    check((await lp.evaluate(() => window.__cam.cleared)) >= 1, 'память записи освобождена');
+
+    // отмена посреди серии
+    await lp.click('[data-tab=vcalib]');
+    check(await lp.isVisible('#lvCanvas') && !(await lp.isDisabled('#lvStart')), 'после съёмки камера осталась включённой');
+    await lp.click('#lvStart');
+    check(await until(() => state.calib === 1, 6000), 'вторая серия запущена');
+    await sleep(1500);
+    await lp.click('#lvCancel');
+    check(await until(async () => (await lp.textContent('#lvStatus')).includes('Прервано'), 8000), 'отмена прерывает съёмку');
+    check(await until(() => state.calib === 0, 8000), 'отмена останавливает серию на гирлянде');
+    check(await until(async () => !(await lp.isDisabled('#lvStart')), 4000), 'после отмены можно снимать снова');
+
+    // уход с вкладки освобождает камеру
+    await lp.click('[data-tab=control]');
+    check(await until(async () => (await lp.evaluate(() => window.__cam.state)) === 'off', 3000), 'уход с вкладки выключает камеру');
+    check(lerrs.length === 0, 'в консоли приложения нет ошибок' + (lerrs.length ? ': ' + lerrs.join(' | ') : ''));
+    await lp.close();
     await page.click('[data-tab=control]');
     jsErrors.length = 0;
   }

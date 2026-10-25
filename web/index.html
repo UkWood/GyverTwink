@@ -141,6 +141,23 @@
   </section>
 
   <section class="tab" id="tab-vcalib" role="tabpanel">
+    <div class="card" id="liveCard" hidden>
+      <h2>Камера телефона</h2>
+      <ol class="steps">
+        <li>Закрепи телефон неподвижно так, чтобы вся гирлянда была в кадре. В комнате должно быть темно.</li>
+        <li>Нажми «Включить камеру», разреши доступ и проверь кадр: гирлянда должна быть видна целиком.</li>
+        <li>Нажми «Снять и разобрать». Серия идёт сама, камера снимает её; не двигай телефон до результата.</li>
+      </ol>
+      <canvas id="lvCanvas" width="240" height="320" hidden></canvas>
+      <div class="row btnrow">
+        <button id="lvCam" class="btn secondary">Включить камеру</button>
+        <button id="lvStart" class="btn" disabled>Снять и разобрать</button>
+        <button id="lvCancel" class="btn secondary" hidden>Отмена</button>
+      </div>
+      <p class="hint" id="lvStatus"></p>
+      <div class="bar"><div id="lvBar"></div></div>
+      <p class="hint">Шаг серии берётся из поля «Шаг» ниже. Если светодиоды не находятся, увеличь шаг или сделай темнее. Запись без камеры (видео из файла) тоже работает: ниже.</p>
+    </div>
     <div class="card">
       <h2>1. Запусти серию</h2>
       <ol class="steps">

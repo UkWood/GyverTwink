@@ -30,6 +30,7 @@ class WebActivity : Activity() {
     private lateinit var host: String
     private var failed = false
     private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private val live = LiveCamera(this)
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,6 +107,31 @@ class WebActivity : Activity() {
         fun changeDevice() {
             runOnUiThread { this@WebActivity.changeDevice() }
         }
+
+        // Живая камера для калибровки (web/app.js, вкладка «Калибровка»): кадры серые, уменьшенные; разбор делает страница
+        @JavascriptInterface
+        fun cameraStart() = live.start()
+
+        @JavascriptInterface
+        fun cameraStop() = live.stop()
+
+        /** JSON: state (off/asking/starting/ready/error), message, w, h, rec, frames, ms (длина записи). */
+        @JavascriptInterface
+        fun cameraStatus(): String = live.statusJson()
+
+        /** Последний кадр: base64 яркости w*h байт (пусто - кадров нет). */
+        @JavascriptInterface
+        fun cameraLatest(): String = live.latestBase64()
+
+        @JavascriptInterface
+        fun cameraRecord(on: Boolean) = live.record(on)
+
+        /** Кадр записи, ближайший к моменту t (секунды от начала записи); формат как у cameraLatest. */
+        @JavascriptInterface
+        fun cameraFrameAt(t: Double): String = live.frameAtBase64(t)
+
+        @JavascriptInterface
+        fun cameraClear() = live.clear()
     }
 
     private inner class Client : WebViewClient() {
@@ -190,7 +216,16 @@ class WebActivity : Activity() {
         if (::web.isInitialized) web.saveState(outState)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == LiveCamera.REQ_CAMERA) {
+            live.onPermissionResult(grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
+    }
+
     override fun onPause() {
+        live.pause()
         if (::web.isInitialized) web.onPause()   // в фоне страница не опрашивает гирлянду
         super.onPause()
     }
@@ -201,6 +236,7 @@ class WebActivity : Activity() {
     }
 
     override fun onDestroy() {
+        live.stop()
         if (::web.isInitialized) web.destroy()
         super.onDestroy()
     }

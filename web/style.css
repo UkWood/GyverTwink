@@ -185,6 +185,9 @@ code { background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 .steps li { margin: 4px 0; }
 .bar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 6px 0; }
 .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#liveCard[hidden] { display: none; }
+#lvCanvas { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: #000; border-radius: 10px; margin: 8px 0; }
+#lvCanvas[hidden] { display: none; }
 #tab-vcalib input[type=file] { width: 100%; margin: 6px 0 10px; color: var(--text); }
 #tab-vcalib .row input[type=number] { width: 96px; }
 #sceneName { flex: 1 1 auto; width: auto; min-width: 0; }
