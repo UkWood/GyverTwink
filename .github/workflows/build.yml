@@ -142,3 +142,26 @@ jobs:
         run: make -C tests gt_host
       - name: e2e-тест веб-интерфейса
         run: node tests/web/ui_test.mjs ./tests/gt_host
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # Android SDK уже есть на раннере (ANDROID_HOME); Gradle ставим нужной версии, wrapper (бинарный jar) в репозитории не храним
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Тесты логики оболочки и сборка APK (debug)
+        working-directory: android
+        run: gradle --console=plain :core:test :app:assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gyvertwink-shell-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

@@ -1817,7 +1817,16 @@ function initTabs() {
 }
 
 // ---------- запуск ----------
+// Внутри приложения для Android страница получает объект window.GTApp (docs/ANDROID_APP.md); в браузере его нет и ничего не меняется
+function initApp() {
+  const b = $('appSwitch');
+  if (!b || typeof window === 'undefined' || !window.GTApp || typeof window.GTApp.changeDevice !== 'function') return;
+  b.hidden = false;
+  b.addEventListener('click', () => window.GTApp.changeDevice());
+}
+
 function init() {
+  initApp();
   initTabs();
   initControl();
   initEffects();

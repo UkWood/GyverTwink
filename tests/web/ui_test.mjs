@@ -953,6 +953,16 @@ try {
   await page.click('[data-tab=control]');
   jsErrors.length = 0;
 
+  console.log('внутри приложения для Android');
+  check(await page.isHidden('#appSwitch'), 'в браузере кнопка «Сменить гирлянду» скрыта');
+  const appPage = await ctx.newPage();
+  await appPage.addInitScript(() => { window.__gtSwitched = 0; window.GTApp = { info: () => '{}', changeDevice: () => { window.__gtSwitched++; } }; });
+  await appPage.goto(base + '/');
+  check(await until(async () => await appPage.isVisible('#appSwitch')), 'при наличии window.GTApp кнопка видна');
+  await appPage.click('#appSwitch');
+  check((await appPage.evaluate(() => window.__gtSwitched)) === 1, 'кнопка вызывает GTApp.changeDevice()');
+  await appPage.close();
+
   console.log('безопасность');
   const noHdr = await fetch(base + '/api/set', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'bright=1' });
   check(noHdr.status === 403, 'POST без заголовка страницы отклоняется (403)');
