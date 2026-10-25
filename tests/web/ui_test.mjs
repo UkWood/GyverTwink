@@ -461,7 +461,7 @@ try {
   check((await page.$eval('#cX', (e) => e.value)) === '5' && (await page.$eval('#cY', (e) => e.value)) === '5', 'его координаты 5, 5');
 
   // перетаскивание точки мышью
-  const where = () => page.evaluate(() => { const q = toScreen(coords.pts[coords.sel], coords.view); const b = document.getElementById('cCanvas').getBoundingClientRect(); return { x: b.left + q.x, y: b.top + q.y }; });
+  const where = () => page.evaluate(() => { const c = document.getElementById('cCanvas'); c.scrollIntoView({ block: 'center' }); const q = toScreen(coords.pts[coords.sel], coords.view); const b = c.getBoundingClientRect(); return { x: b.left + q.x, y: b.top + q.y }; });
   let pt = await where();
   await page.mouse.move(pt.x, pt.y);
   await page.mouse.down();
@@ -617,6 +617,90 @@ try {
   check(await until(async () => (await page.textContent('#hxInfo')).includes('предел прошивки 1000')), 'схема на 1001 светодиод: понятное предупреждение о пределе');
   check((await page.textContent('#toast')).includes('предел'), 'и всплывающее сообщение');
   check(await page.isDisabled('#hxBuild') && state.ledAm === 378, 'построить такую схему нельзя, число светодиодов не менялось');
+
+  console.log('масштаб карты');
+  // точка холста (доли ширины и высоты) в координатах окна: холст сначала прокручивается в кадр
+  const cpt = (fx, fy) => page.evaluate(([a, b]) => { const c = document.getElementById('cCanvas'); c.scrollIntoView({ block: 'center' }); const r = c.getBoundingClientRect(); return { x: r.left + a * r.width, y: r.top + b * r.height, w: r.width, h: r.height }; }, [fx, fy]);
+  const worldAt = (mx, my) => page.evaluate(([x, y]) => { const r = document.getElementById('cCanvas').getBoundingClientRect(); return { x: (x - r.left - coords.view.ox) / coords.view.s, y: (y - r.top - coords.view.oy) / coords.view.s }; }, [mx, my]);
+  check(await page.evaluate(() => coords.zoom === 1 && coords.pan.x === 0), 'по умолчанию карта вписана целиком (масштаб 1)');
+  const m0 = await cpt(0.3, 0.3);
+  const mx = Math.round(m0.x), my = Math.round(m0.y);
+  const w0 = await worldAt(mx, my);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(mx, my);
+  await page.mouse.wheel(0, -800);
+  check(await until(() => page.evaluate(() => coords.zoom > 1.5)), 'колесо мыши увеличивает карту');
+  const w1 = await worldAt(mx, my);
+  check(Math.abs(w1.x - w0.x) < 0.3 && Math.abs(w1.y - w0.y) < 0.3, 'точка карты под курсором осталась на месте (' + [w0.x, w1.x, w0.y, w1.y].map((v) => v.toFixed(2)).join(' / ') + ')');
+  check((await page.evaluate(() => window.scrollY)) === scrollBefore, 'страница при этом не прокручивается');
+  for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 400);
+  check(await until(() => page.evaluate(() => coords.zoom === 1 && coords.pan.x === 0 && coords.pan.y === 0)), 'колесо в обратную сторону возвращает вписанный вид, сдвиг сброшен');
+  await page.click('#cZoomIn');
+  check(await page.evaluate(() => Math.abs(coords.zoom - 1.5) < 1e-9) && (await page.textContent('#cZoomVal')) === '×1.5', 'кнопка «+»: масштаб 1,5');
+  await page.click('#cZoomOut');
+  check(await page.evaluate(() => coords.zoom === 1), 'кнопка «−»: обратно к 1');
+  for (let i = 0; i < 20; i++) await page.click('#cZoomIn');
+  check(await page.evaluate(() => coords.zoom === ZOOM_MAX), 'масштаб ограничен сверху (' + 20 + ')');
+  await page.click('#cZoomFit');
+  check(await page.evaluate(() => coords.zoom === 1) && (await page.textContent('#cZoomVal')) === '×1', 'кнопка «Вписать»');
+  // два пальца (события указателей: живой мультитач в Playwright недоступен)
+  const pinch = (cx, cy, from, to) => page.evaluate(([x, y, a, b]) => {
+    const cv = document.getElementById('cCanvas');
+    const r = cv.getBoundingClientRect();
+    const ev = (type, id, px) => cv.dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: r.left + px, clientY: r.top + y, bubbles: true, pointerType: 'touch' }));
+    ev('pointerdown', 11, x - a); ev('pointerdown', 12, x + a);
+    ev('pointermove', 12, x + b); ev('pointermove', 11, x - b);
+    ev('pointerup', 11, x - b); ev('pointerup', 12, x + b);
+  }, [cx, cy, from, to]);
+  const cc = await cpt(0.5, 0.5);
+  await pinch(cc.w / 2, cc.h / 2, 40, 90);
+  check(await page.evaluate(() => coords.zoom > 2.0 && coords.zoom < 2.5), 'два пальца раздвинуты в 2,25 раза: масштаб растёт');
+  check(await page.evaluate(() => !coords.dirty && !coords.drag && coords.pointers.size === 0), 'жест не правит точки и не оставляет «зажатых» указателей');
+  await pinch(cc.w / 2, cc.h / 2, 90, 30);
+  check(await page.evaluate(() => coords.zoom < 1.3), 'два пальца сведены: масштаб уменьшается');
+  await page.click('#cZoomFit');
+  // сдвиг при увеличении: тянем пустое место
+  for (let i = 0; i < 3; i++) await page.click('#cZoomIn');
+  const free = await page.evaluate(() => {
+    const cv = document.getElementById('cCanvas');
+    cv.scrollIntoView({ block: 'center' });
+    const r = cv.getBoundingClientRect();
+    for (let y = 10; y < r.height - 10; y += 10) {   // любое место холста, где рядом нет светодиодов
+      for (let x = 10; x < r.width - 10; x += 10) {
+        if (nearestPoint(coords.pts, x, y, coords.view, 24) < 0) return { x: r.left + x, y: r.top + y };
+      }
+    }
+    return null;
+  });
+  check(free !== null, 'в кадре есть свободное от светодиодов место для сдвига');
+  if (free) {
+    const panBefore = await page.evaluate(() => ({ x: coords.pan.x, y: coords.pan.y }));
+    await page.mouse.move(free.x, free.y);
+    await page.mouse.down();
+    await page.mouse.move(free.x + 25, free.y + 15, { steps: 3 });
+    await page.mouse.up();
+    const panAfter = await page.evaluate(() => ({ x: coords.pan.x, y: coords.pan.y }));
+    check(Math.abs(panAfter.x - panBefore.x - 25) < 1 && Math.abs(panAfter.y - panBefore.y - 15) < 1, 'перетаскивание пустого места сдвигает карту вместе с пальцем');
+    check(await page.evaluate(() => !coords.dirty), 'сдвиг карты не правит точки');
+  }
+  // правка точки при увеличении: точка идёт за указателем
+  const pt0 = await page.evaluate(() => { coordsSelect(0); const c = document.getElementById('cCanvas'); c.scrollIntoView({ block: 'center' }); const r = c.getBoundingClientRect(); const q = toScreen(coords.pts[0], coords.view); return { x: r.left + q.x, y: r.top + q.y, s: coords.view.s }; });
+  await page.mouse.move(pt0.x, pt0.y);
+  await page.mouse.down();
+  await page.mouse.move(pt0.x + 12, pt0.y + 9, { steps: 3 });
+  await page.mouse.up();
+  const moved = await page.evaluate(() => { const r = document.getElementById('cCanvas').getBoundingClientRect(); const q = toScreen(coords.pts[0], coords.view); return { x: r.left + q.x, y: r.top + q.y, dirty: coords.dirty }; });
+  check(moved.dirty && Math.abs(moved.x - (pt0.x + 12)) <= pt0.s / 2 + 1 && Math.abs(moved.y - (pt0.y + 9)) <= pt0.s / 2 + 1, 'при увеличении перетаскиваемая точка идёт за указателем (шаг карты ' + pt0.s.toFixed(1) + ' px)');
+  await page.click('#cUndo');
+  // выбор светодиода вне кадра подводит его в кадр
+  await page.click('#cZoomFit');
+  for (let i = 0; i < 8; i++) await page.click('#cZoomIn');
+  await setNumber('#cIdx', 300);
+  check(await page.evaluate(() => { const cv = document.getElementById('cCanvas'); const q = toScreen(coords.pts[299], coords.view); return q.x >= 0 && q.x <= cv.clientWidth && q.y >= 0 && q.y <= cv.clientHeight; }), 'светодиод №300 выбран по номеру при сильном увеличении: карта сдвинулась, он в кадре');
+  await page.screenshot({ path: (process.env.GT_SHOT || '/tmp/gt_web_effects.png').replace('.png', '_zoom.png'), fullPage: true });
+  await page.click('#spBuild');
+  check(await until(() => page.evaluate(() => coords.zoom === 1 && coords.pan.x === 0)), 'новая схема показывается целиком: масштаб сброшен');
+  await page.click('#cUndo');
   await page.click('[data-tab=control]');
   await setNumber('#ledAm', 120);   // как было до проверки
   check(await stateIs('ledAm', 120), 'число светодиодов возвращено к 120');
