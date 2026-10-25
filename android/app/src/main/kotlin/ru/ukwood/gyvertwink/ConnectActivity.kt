@@ -38,7 +38,7 @@ class ConnectActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
-        col.addView(Ui.label(this, "GyverTwink", 24f, Ui.text, true))
+        col.addView(Ui.label(this, "GyverTwink", 24f, Ui.fg, true))
         col.addView(Ui.gap(this, 4))
         status = Ui.label(this, "", 14f, Ui.muted)
         col.addView(status)
@@ -50,14 +50,14 @@ class ConnectActivity : Activity() {
         col.addView(Ui.button(this, "Искать снова", false) { search() })
 
         col.addView(Ui.gap(this, 24))
-        col.addView(Ui.label(this, "Ввести адрес вручную", 16f, Ui.text, true))
+        col.addView(Ui.label(this, "Ввести адрес вручную", 16f, Ui.fg, true))
         col.addView(Ui.label(this, "IP-адрес (192.168.1.50) или имя (gyvertwink.local)", 13f, Ui.muted))
         col.addView(Ui.gap(this, 6))
         input = EditText(this).apply {
             setSingleLine()
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
-            setTextColor(Ui.text)
+            setTextColor(Ui.fg)
             setHintTextColor(Ui.muted)
             hint = "192.168.1.50"
             minHeight = Ui.dp(context, 48)

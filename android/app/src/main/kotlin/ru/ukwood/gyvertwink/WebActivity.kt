@@ -67,7 +67,7 @@ class WebActivity : Activity() {
             gravity = android.view.Gravity.CENTER
             visibility = View.GONE
         }
-        errorBox.addView(Ui.label(this, "Нет связи с гирляндой", 20f, Ui.text, true))
+        errorBox.addView(Ui.label(this, "Нет связи с гирляндой", 20f, Ui.fg, true))
         errorText = Ui.label(this, "", 14f, Ui.muted)
         errorBox.addView(errorText)
         errorBox.addView(Ui.gap(this, 16))

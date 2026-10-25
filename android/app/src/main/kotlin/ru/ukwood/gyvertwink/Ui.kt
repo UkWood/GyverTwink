@@ -13,7 +13,7 @@ object Ui {
     val bg = Color.parseColor("#12151C")
     val card = Color.parseColor("#1B2030")
     val line = Color.parseColor("#2B3247")
-    val text = Color.parseColor("#E8ECF5")
+    val fg = Color.parseColor("#E8ECF5")
     val muted = Color.parseColor("#8D96AD")
     val accent = Color.parseColor("#FFB020")
     val accentText = Color.parseColor("#1A1300")
@@ -35,7 +35,7 @@ object Ui {
         textSize = 16f
         minHeight = dp(ctx, 48)
         minimumHeight = dp(ctx, 48)
-        setTextColor(if (primary) accentText else text)
+        setTextColor(if (primary) accentText else fg)
         background = rounded(ctx, if (primary) accent else card, if (primary) null else line)
         setPadding(dp(ctx, 16), 0, dp(ctx, 16), 0)
         setOnClickListener { onClick() }
