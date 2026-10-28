@@ -50,6 +50,7 @@ void setupSTA() {
   WiFi.softAPdisconnect();
   WiFi.disconnect();
   WiFi.mode(WIFI_STA);
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);   // без «сна» модема: его пробуждения дают прерывания и глитчи в выводе на ленту (мерцание первых светодиодов)
   WiFi.begin(portalCfg.SSID, portalCfg.pass);
   uint32_t tmr = millis();
   bool state = false;
